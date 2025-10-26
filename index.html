@@ -3,372 +3,462 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>个人收入支出规划（本地 - V4）</title>
+<title>个人收入支出规划（V5 - Interactive Stacked）</title>
 
-<!-- Vue 3 -->
+<!-- Vue 3 (production build recommended for deploy) -->
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<!-- ExcelJS (browser) -->
+<!-- ECharts -->
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.2/dist/echarts.min.js"></script>
+<!-- ExcelJS -->
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
-<!-- FileSaver for saving generated xlsx -->
+<!-- FileSaver -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
 <style>
-:root{
-  --primary:#1a4e89; --accent:#3a7bd5; --danger:#c0392b; --muted:#8b9ab3;
-}
+:root{ --primary:#1a4e89; --accent:#3a7bd5; --danger:#c0392b; --muted:#6c7a89; --card:#fff; --high1:#ef6b6b; --high2:#4b7bd5; --high3:#6cc3a1; --other:#bdbdbd; }
 *{box-sizing:border-box}
 body{ font-family:"Microsoft YaHei", Arial, sans-serif; background:#f4f7fb; margin:0; color:#222;}
 header{ background: linear-gradient(90deg,var(--primary),var(--accent)); color:#fff; padding:12px 16px; text-align:center; font-size:18px; }
-.container{ max-width:1100px; margin:18px auto; background:#fff; border-radius:10px; padding:14px; box-shadow:0 6px 18px rgba(20,30,60,0.06);}
-h2{ color:var(--primary); margin:8px 0;}
-table{ width:100%; border-collapse:collapse; margin-bottom:10px; font-size:13px; }
-th, td{ border:1px solid #e6eef6; padding:6px; vertical-align:middle; }
-th{ background:#eaf1f8; text-align:left; padding:8px; font-weight:700;}
-.icon-btn{ background:transparent; border:0; padding:6px; cursor:pointer; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; }
-.icon-btn svg{ width:18px; height:18px; stroke:#2c3e50; }
-.icon-btn.danger svg{ stroke:var(--danger); }
-.icon-btn.small{ padding:4px; }
-.add-btn{ background:var(--accent); color:#fff; border-radius:6px; padding:6px 10px; cursor:pointer; border:0; }
-.input-num{ width:110px; } /* narrow numeric input for ~6 digits */
-.input-name{ width:220px; } /* truncated width for vertical fit */
-.compact-name{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px; display:inline-block; vertical-align:middle; }
-.controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-.row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
-.col { flex:1; min-width:120px; }
-.small-note{ font-size:12px; color:var(--muted); }
-.chart-wrap{ display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }
-.chart-card{ flex:1 1 320px; background:#fafcff; padding:10px; border-radius:8px; border:1px solid #eef5ff; }
+.container{ max-width:1200px; margin:18px auto; background:var(--card); border-radius:10px; padding:14px; box-shadow:0 6px 18px rgba(20,30,60,0.06);}
+.row{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.small{ font-size:13px; padding:6px 10px; border-radius:6px; cursor:pointer; border:0; color:#fff; }
+.add{ background:var(--accent); }
+.warn{ background:var(--danger); }
+.input-num{ width:110px; }
+.input-pct{ width:80px; }
+.card{ background:var(--card); padding:10px; border-radius:8px; border:1px solid #eef5ff; }
+.charts{ display:grid; gap:12px; margin-top:12px; grid-template-columns: 1fr 1fr; align-items:start; }
+.chartbox{ height:340px; background: #fff; border-radius:8px; border:1px solid #eef5ff; padding:8px; box-shadow: 0 2px 8px rgba(10,20,40,0.03); }
+.color-swatch{ width:18px; height:18px; display:inline-block; border-radius:4px; margin-right:6px; vertical-align:middle; border:1px solid #ccc; cursor:pointer;}
 .meta{ font-size:13px; color:#666; }
-.percent-total{ font-weight:700; }
-.file-info{ font-size:12px; color:#666; margin-top:6px; }
-.footer-actions{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; }
+.select{ padding:6px; border-radius:6px; border:1px solid #ddd; }
 .file-input{ display:none; }
+.code{ font-family:monospace; background:#fff; padding:4px 6px; border-radius:4px; border:1px solid #eee; }
+.empty{ text-align:center; padding:28px; }
+.error{ color:var(--danger); font-weight:700; }
+.controls{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+
+/* groups/categories grid */
+.section{ margin-top:12px; }
+.group-row{ display:grid; grid-template-columns: 34px 1fr 90px 160px 80px; gap:8px; align-items:center; padding:6px; border-bottom:1px solid #f1f5fa; }
+.group-header{ font-weight:700; background:#f8fafc; padding:6px; border-radius:4px; }
+.item-row{ display:grid; grid-template-columns: 34px 1fr 110px 160px 80px; gap:8px; align-items:center; padding:6px 6px 6px 48px; border-bottom:1px dashed #f0f4f8; background:rgba(250,250,250,0.4); }
+.icon-vert{ display:flex; flex-direction:column; gap:4px; align-items:center; justify-content:center; }
+.icon-btn{ width:28px; height:28px; padding:4px; border-radius:6px; border:0; background:#eef6ff; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+.icon-btn svg{ width:12px; height:12px; fill:#234; }
+.caret{ width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+
+/* responsive */
+@media (max-width: 780px){
+  .charts{ grid-template-columns: 1fr; }
+  .chartbox{ height:260px; }
+  .group-row{ grid-template-columns: 34px 1fr 70px 120px 60px; }
+  .item-row{ grid-template-columns: 34px 1fr 90px 120px 60px; padding-left:44px; }
+}
 </style>
 </head>
 <body>
-<header>个人收入支出规划（离线可用 - V4，兼容旧数据）</header>
+<header>个人收入支出规划（V5 — Interactive Stacked）</header>
 
-<div id="app" class="container">
-  <div class="row" style="justify-content:space-between; align-items:center;">
-    <h2>收入区</h2>
-    <div>
-      <button class="add-btn" @click="addIncome">＋ 添加收入</button>
-      <button class="add-btn" style="background:#1a9b5b;margin-left:8px" @click="importJSON">📂 导入 JSON</button>
+<div id="app" class="container" v-cloak>
+  <div v-if="!hasProfiles" class="card empty">
+    <h2>📁 尚未载入任何档案</h2>
+    <p class="meta">系统未能从本地资料加载到有效档案或数据为空。你可以创建一个新的默认档案，或导入已有 JSON 数据。</p>
+    <div style="margin-top:12px">
+      <button class="small add" @click="createDefaultFromEmpty">＋ 创建默认档案</button>
+      <button class="small" @click="triggerImport">📂 导入 JSON</button>
       <input id="fileImport" class="file-input" type="file" accept=".json" @change="onFileImport" />
+      <button class="small warn" @click="clearAllConfirm">⚠️ 清空 localStorage</button>
     </div>
+    <div style="margin-top:12px" class="meta">若不确定原因，请查看浏览器 Console 的加载日志。</div>
+    <div v-if="loadError" style="margin-top:8px" class="error">错误：{{ loadError }}</div>
   </div>
 
-  <table>
-    <thead>
-      <tr><th style="width:48%">项目名</th><th style="width:20%">金额 (RM)</th><th style="width:32%">操作</th></tr>
-    </thead>
-    <tbody>
-      <tr v-for="(inc, i) in incomes" :key="'inc-'+i">
-        <td>
-          <input class="input-name" v-model="inc.name" :placeholder="'项目名称'" @blur="triggerSave" />
-        </td>
-        <td>
-          <input class="input-num" type="number" min="0" step="1" v-model.number="inc.amount" @input="limitNumber(i,'income')" />
-        </td>
-        <td>
-          <div style="display:flex; gap:6px; align-items:center;">
-            <button class="icon-btn small" :title="'上移'" @click="moveIncomeUp(i)" :disabled="i===0" v-html="icons.arrowUp"></button>
-            <button class="icon-btn small" :title="'下移'" @click="moveIncomeDown(i)" :disabled="i===incomes.length-1" v-html="icons.arrowDown"></button>
-            <button class="icon-btn small danger" :title="'删除'" @click="removeIncome(i)" v-html="icons.trash"></button>
+  <div v-else>
+    <div class="row" style="justify-content:space-between;">
+      <div>
+        <h2>档案 — 当前：<strong>{{ currentProfile.name || '（未命名）' }}</strong> <span v-if="currentProfile.isDefault">（默认）</span></h2>
+        <div class="row" style="align-items:center">
+          <label class="meta">切换档案：</label>
+          <select class="select" v-model="currentProfileId" @change="switchProfile">
+            <option v-for="p in dataStore.profiles" :value="p.id">{{ p.name }}</option>
+          </select>
+          <button class="small add" @click="createProfile">＋ 新档案</button>
+          <button class="small" style="background:#7cc" @click="renameProfile">✏️ 重命名</button>
+          <button class="small" style="background:#6b8" @click="setDefaultProfile">⭐ 设为默认</button>
+          <button class="small" @click="duplicateProfile">📄 复制档案</button>
+          <button class="small warn" @click="deleteProfile">🗑️ 删除档案</button>
+        </div>
+      </div>
+      <div>
+        <div class="meta">自动保存：{{ autoSave ? '开启' : '关闭' }} · 最后保存：{{ lastSaved || '—' }}</div>
+        <div style="margin-top:6px">
+          <button class="small add" @click="triggerImport">📂 导入 JSON</button>
+          <input id="fileImport2" class="file-input" type="file" accept=".json" @change="onFileImport" />
+          <button class="small" @click="exportJSON">📤 导出 JSON</button>
+          <button class="small" @click="exportExcel">⬇️ 导出 Excel</button>
+          <button class="small warn" @click="clearAllConfirm">⚠️ 清空</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Groups & Categories -->
+    <div class="card section">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div><strong>分组（Groups）</strong></div>
+        <div>
+          <input v-model="newGroupName" placeholder="分组名" />
+          <input type="color" v-model="newGroupColor" title="颜色" />
+          <button class="small add" @click="addGroup">＋ 添加分组</button>
+        </div>
+      </div>
+
+      <div style="margin-top:8px" class="group-row group-header">
+        <div></div><div>分组名</div><div>颜色</div><div>操作</div>
+      </div>
+      <div v-for="(g,gi) in currentProfile.groups" :key="g.id" class="group-row" style="margin-top:6px;">
+        <div class="icon-vert" style="align-items:center">
+          <button class="icon-btn" title="上移" @click="moveGroupUp(gi)"><svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg></button>
+          <button class="icon-btn" title="下移" @click="moveGroupDown(gi)"><svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></button>
+        </div>
+        <div><input v-model="g.name" @focus="ensureGroupVisible(g.id)" @blur="scheduleSave" /></div>
+        <div>
+          <span class="color-swatch" :style="{background:g.color}" @click="openColorPicker('group', gi)"></span>
+        </div>
+        <div>
+          <button class="small" @click="assignGroupToAll(g.id)">分配到所有项目</button>
+          <button class="small warn" @click="removeGroup(gi)">删除</button>
+        </div>
+        <div><span class="meta"> </span></div>
+      </div>
+      <div v-if="!currentProfile.groups || currentProfile.groups.length===0" style="margin-top:8px" class="meta">（尚无分组）</div>
+    </div>
+
+    <div class="card section">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div><strong>类别（Categories）</strong></div>
+        <div>
+          <input v-model="newCategoryName" placeholder="类别名" />
+          <select v-model="newCategoryDir"><option value="in">in</option><option value="out">out</option></select>
+          <input type="color" v-model="newCategoryColor" />
+          <button class="small add" @click="addCategory">＋ 添加类别</button>
+        </div>
+      </div>
+
+      <div style="margin-top:8px" class="group-row group-header">
+        <div></div><div>类别名</div><div>方向 / 分配%</div><div>ID（隐藏）</div>
+      </div>
+      <div v-for="(c,ci) in currentProfile.categories" :key="c.id" class="group-row" style="margin-top:6px;">
+        <div class="icon-vert">
+          <button class="icon-btn" title="上移" @click="moveCategoryUp(ci)"><svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg></button>
+          <button class="icon-btn" title="下移" @click="moveCategoryDown(ci)"><svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></button>
+        </div>
+        <div><input v-model="c.name" @blur="scheduleSave" /></div>
+        <div>
+          <select v-model="c.direction" @change="onCategoryDirectionChange(c)" style="margin-right:6px"><option value="in">in</option><option value="out">out</option></select>
+          <span v-if="c.direction==='out'"><input class="input-pct" type="number" min="0" max="100" v-model.number="c.percentOfTotalIn" @input="sanitizePct(c,'percentOfTotalIn')" /> %</span>
+          <span v-else class="meta">—</span>
+        </div>
+        <div><!-- ID hidden --></div>
+        <div></div>
+      </div>
+      <div v-if="!currentProfile.categories || currentProfile.categories.length===0" style="margin-top:8px" class="meta">（尚无类别）</div>
+    </div>
+
+    <!-- Data editor with collapsible group rows and item breakdown -->
+    <div class="card section">
+      <h3>数据编辑（根据 category id 存放）</h3>
+      <div class="meta">选择要编辑的类别：</div>
+      <select class="select" v-model="editingCategoryId">
+        <option v-for="c in currentProfile.categories" :value="c.id">{{ c.name }} — {{ c.direction }}</option>
+      </select>
+      <div style="margin-top:8px">
+        <button class="small add" @click="addCategoryGroup">＋ 在该类别下添加分类组（name/percent）</button>
+      </div>
+
+      <div style="margin-top:8px">
+        <div class="group-row group-header">
+          <div></div><div>组名</div><div>组占比</div><div>细项（点击名称编辑）</div>
+        </div>
+
+        <div v-if="currentProfile.data && currentProfile.data[editingCategoryId]" v-for="(grp,gi) in currentProfile.data[editingCategoryId]" :key="gi">
+          <!-- group main row -->
+          <div class="group-row">
+            <div class="caret" @click="toggleGroupCollapse(editingCategoryId, gi)"><svg v-if="isGroupExpanded(editingCategoryId,gi)" viewBox="0 0 24 24" width="14" height="14"><path d="M7 10l5 5 5-5z"/></svg><svg v-else viewBox="0 0 24 24" width="14" height="14"><path d="M10 7l5 5-5 5z"/></svg></div>
+            <div><strong>{{ grp.name }}</strong></div>
+            <div>
+              <span v-if="isCurrentCategoryOut(editingCategoryId)"><input class="input-pct" type="number" min="0" max="100" v-model.number="grp.percent" @input="sanitizePct(grp,'percent')" /> %</span>
+              <span v-else class="meta">—</span>
+            </div>
+            <div><span class="meta">组内项目：{{ (grp.items||[]).length }}</span></div>
+            <div class="icon-vert">
+              <button class="icon-btn" title="上移组" @click="moveGroupInCategoryUp(editingCategoryId,gi)"><svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg></button>
+              <button class="icon-btn" title="下移组" @click="moveGroupInCategoryDown(editingCategoryId,gi)"><svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></button>
+            </div>
           </div>
-        </td>
-      </tr>
-      <tr v-if="incomes.length===0"><td colspan="3" class="small-note" style="text-align:center">（当前无收入项）</td></tr>
-      <tr>
-        <th>收入总和</th>
-        <td colspan="2">RM {{ totalIncome.toFixed(2) }}</td>
-      </tr>
-    </tbody>
-  </table>
 
-  <div class="row" style="justify-content:space-between; align-items:center; margin-top:6px;">
-    <h2>支出区</h2>
-    <div class="controls">
-      <button class="add-btn" @click="addExpenseCategory">＋ 添加分类</button>
-      <button class="add-btn" style="background:#ff8c42" @click="resetDefaultCategories">恢复默认</button>
-      <div class="meta">总分配：<span :class="{'percent-total':true, 'warn': percentTotal!==100}" :style="{color: percentTotal===100? 'green' : (percentTotal>100? 'var(--danger)':'#c67')}">{{ percentTotal }}%</span></div>
-    </div>
-  </div>
-
-  <table>
-    <thead>
-      <tr><th style="width:18%">分类</th><th style="width:12%">比例 (%)</th><th>细项（名称 / 金额 / 操作）</th><th style="width:18%">分类：支出 / 预算</th></tr>
-    </thead>
-    <tbody>
-      <tr v-for="(cat, ci) in expenses" :key="'cat-'+ci">
-        <td style="vertical-align:top;">
-          <input class="input-name" v-model="cat.name" @blur="triggerSave" />
-          <div style="margin-top:8px;">
-            <button class="icon-btn small" :title="'上移分类'" @click="moveCategoryUp(ci)" :disabled="ci===0" v-html="icons.arrowUp"></button>
-            <button class="icon-btn small" :title="'下移分类'" @click="moveCategoryDown(ci)" :disabled="ci===expenses.length-1" v-html="icons.arrowDown"></button>
-            <button class="icon-btn small danger" :title="'删除分类'" @click="removeCategory(ci)" v-html="icons.trash"></button>
+          <!-- items as custom rows (collapsed/expanded) -->
+          <div v-show="isGroupExpanded(editingCategoryId,gi)">
+            <div v-for="(it,ii) in (grp.items || [])" :key="it.id" class="item-row">
+              <div class="icon-vert">
+                <button class="icon-btn" title="上移" @click="moveItemUp(editingCategoryId,gi,ii)"><svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg></button>
+                <button class="icon-btn" title="下移" @click="moveItemDown(editingCategoryId,gi,ii)"><svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></button>
+              </div>
+              <div><input v-model="it.name" @focus="ensureItemVisible(editingCategoryId,gi,ii)" @input="onItemEdit(editingCategoryId,gi,ii)" /></div>
+              <div><input type="number" class="input-num" v-model.number="it.amount" @input="onItemAmountChange(it,editingCategoryId,gi,ii)" /></div>
+              <div>
+                <select v-model="it.groupIds" multiple @change="scheduleSave">
+                  <option v-for="g in currentProfile.groups" :value="g.id">{{ g.name }}</option>
+                </select>
+              </div>
+              <div class="icon-vert">
+                <!-- <button class="icon-btn" title="上移" @click="moveItemUp(editingCategoryId,gi,ii)"><svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg></button>
+                <button class="icon-btn" title="下移" @click="moveItemDown(editingCategoryId,gi,ii)"><svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></button> -->
+                <button class="small warn" @click="removeItem(editingCategoryId,gi,ii)">删除</button>
+              </div>
+            </div>
+            <div style="padding:8px 12px 12px;">
+              <button class="small add" @click="addItemToSpecificGroup(editingCategoryId,gi)">＋ 添加细项</button>
+            </div>
           </div>
-        </td>
-        <td>
-          <input type="number" min="0" max="100" v-model.number="cat.percent" @input="triggerSave" />
-        </td>
-        <td>
-          <table style="width:100%; border:0;">
-            <tbody>
-              <tr v-for="(it, ii) in cat.items" :key="ci+'-'+ii">
-                <td style="width:55%"><input class="input-name" v-model="it.name" placeholder="细项名称" @blur="triggerSave" /></td>
-                <td style="width:22%"><input class="input-num" type="number" min="0" step="1" v-model.number="it.amount" @input="limitNumber(ci, 'expense', ii)" /></td>
-                <td style="width:23%">
-                  <div style="display:flex; gap:6px; align-items:center;">
-                    <button class="icon-btn small" :title="'上移细项'" @click="moveExpenseItemUp(ci, ii)" :disabled="ii===0" v-html="icons.arrowUp"></button>
-                    <button class="icon-btn small" :title="'下移细项'" @click="moveExpenseItemDown(ci, ii)" :disabled="ii===cat.items.length-1" v-html="icons.arrowDown"></button>
-                    <button class="icon-btn small danger" :title="'删除细项'" @click="removeExpenseItem(ci, ii)" v-html="icons.trash"></button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="cat.items.length===0"><td colspan="3" class="small-note" style="text-align:center">（尚无细项）</td></tr>
-              <tr>
-                <td colspan="3"><button class="add-btn" @click="addExpenseItem(ci)">＋ 添加细项</button></td>
-              </tr>
-              <tr style="background:#fbfdff;">
-                <td><strong>小计</strong></td>
-                <td colspan="2">RM {{ categoryTotal(cat).toFixed(2) }} / 预算 RM {{ budgetAmount(cat).toFixed(2) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </td>
-        <td style="vertical-align:top;">
-          <div>已支出：RM {{ categoryTotal(cat).toFixed(2) }}</div>
-          <div style="margin-top:8px">预算：RM {{ budgetAmount(cat).toFixed(2) }}</div>
-        </td>
-      </tr>
-    </tbody>
-    <tfoot>
-      <tr style="background:#eef7ff;">
-        <th>支出总计</th>
-        <td colspan="3">RM {{ totalExpense.toFixed(2) }}</td>
-      </tr>
-      <tr>
-        <th>结余</th>
-        <td colspan="3" :style="{color:(totalIncome - totalExpense)>=0 ? 'green':'var(--danger)'}">
-          {{ (totalIncome - totalExpense)>=0 ? '盈余' : '赤字' }}：RM {{ (totalIncome - totalExpense).toFixed(2) }}
-        </td>
-      </tr>
-    </tfoot>
-  </table>
+        </div>
 
-  <div class="footer-actions">
-    <button class="add-btn" @click="saveNow" title="保存到 localStorage">💾 保存</button>
-    <button class="add-btn" style="background:#6b8" @click="exportExcel" title="导出为 Excel (.xlsx)">⬇️ 导出 Excel</button>
-    <button class="add-btn" style="background:#7cc" @click="exportJSON" title="导出 JSON 备份">📤 导出 JSON</button>
-    <button class="add-btn" style="background:#888" @click="showStorage" title="显示本地储存 (raw)">📁 显示储存</button>
-    <button class="add-btn" style="background:var(--danger)" @click="clearAllConfirm">⚠️ 清空并恢复默认</button>
-    <div style="flex:1"></div>
-    <div class="file-info">
-      自动保存：<strong>{{ autoSave ? '开启' : '关闭' }}</strong> · 最后保存：<strong>{{ lastSaved ? lastSaved : '—' }}</strong><br>
-      Storage key: <code>{{ storageKey }}</code>
+        <div v-if="!currentProfile.data || !(currentProfile.data[editingCategoryId])" style="margin-top:8px" class="meta">请选择类别并添加组/细项。</div>
+      </div>
     </div>
+
+    <div class="row" style="margin-top:12px">
+      <div class="controls">
+        <label class="meta">方向：</label>
+        <select v-model="chartDirection" class="select" @change="updateCharts">
+          <option value="in">in（流入）</option>
+          <option value="out">out（流出）</option>
+        </select>
+
+        <label class="meta">按 Group 聚合：</label>
+        <select v-model="chartGroupFilter" class="select" @change="updateCharts">
+          <option value="all">（全部分组）</option>
+          <option value="other">（其它：未分组）</option>
+          <option v-for="g in currentProfile.groups" :value="g.id">{{ g.name }}</option>
+        </select>
+
+        <label class="meta">显示：</label>
+        <select v-model="chartDisplayMode" class="select" @change="updateCharts">
+          <option value="both">饼图 + 柱状图</option>
+          <option value="pie">仅饼图</option>
+          <option value="bar">仅柱状图</option>
+        </select>
+
+        <button class="small" @click="updateCharts">刷新图表</button>
+      </div>
+    </div>
+
+    <div class="charts" role="region" aria-label="图表区域">
+      <div v-show="chartDisplayMode!=='bar'" class="chartbox card" id="chartGroup"></div>
+      <div v-show="chartDisplayMode!=='pie'" class="chartbox card" id="chartCategory"></div>
+    </div>
+
+    <div style="margin-top:12px" class="meta">Storage key: <code>{{ storageKey }}</code> · 数据版本：{{ dataStore.version }}</div>
+
   </div>
 
-  <div class="chart-wrap">
-    <div class="chart-card">
-      <h3>收入分布</h3>
-      <canvas id="incomeChart" width="400" height="260"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3>支出结构（分类）</h3>
-      <canvas id="expenseChart" width="400" height="260"></canvas>
-    </div>
-  </div>
+  <input id="hiddenColorPicker" type="color" style="display:none" @input="applyColorChange" />
 </div>
 
 <script>
-const { createApp } = Vue;
+const { createApp, nextTick } = Vue;
 
-const ICONS = {
-  plus: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
-  trash: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>',
-  arrowUp: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>',
-  arrowDown: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>'
-};
+function genUuid(prefix='id'){
+  const t = Date.now().toString(36);
+  const r = Math.random().toString(36).slice(2,8);
+  return `${prefix}_${t}_${r}`;
+}
+function deepClone(o){ return JSON.parse(JSON.stringify(o)); }
 
 createApp({
   data(){
     return {
-      // include multiple legacy keys for compatibility
-      storageKey: 'local_finance_planner_v2',
-      legacyKeys: ['local_finance_planner_v1','local_finance_planner','incomeExpenseData','plannerData','finance_backup'],
+      storageKey: 'income_expense_planner_v5',
+      legacyKeys: ['local_finance_planner_v2','local_finance_planner_v1','local_finance_planner','incomeExpenseData','plannerData','finance_backup'],
       autoSave: true,
       lastSaved: null,
-      incomes: [
-        {name:'工资', amount:5000},
-        {name:'副业', amount:800}
-      ],
-      expenses: [
-        { name:'投资', percent:25, items:[ {name:'股票', amount:0} ] },
-        { name:'贷款', percent:36, items:[ {name:'房贷', amount:0} ] },
-        { name:'承担', percent:25, items:[ {name:'父母/保险', amount:0} ] },
-        { name:'生活费', percent:12, items:[ {name:'食物/交通', amount:0} ] },
-        { name:'其它', percent:2, items:[ {name:'杂项', amount:0} ] }
-      ],
-      incomeChart:null,
-      expenseChart:null,
-      icons: ICONS
+      dataStore: { version:5, profiles: [] , lastUpdated: null },
+      currentProfileId: null,
+      newGroupName: '',
+      newGroupColor: '#66c2ff',
+      newCategoryName: '',
+      newCategoryDir: 'in',
+      newCategoryColor: '#ffd266',
+      editingCategoryId: null,
+      chartDirection: 'in',
+      chartGroupFilter: 'all',
+      chartDisplayMode: 'both',
+      groupChartInstance: null,
+      categoryChartInstance: null,
+      loadError: '',
+      // save
+      saveLock: false,
+      saveTimer: null,
+      savingSilently: false,
+      // color edit
+      pendingColorEdit: null,
+      // UI collapse state per category/group index (key = `${cid}::${gi}`)
+      expandedMap: {}
     }
   },
   computed:{
-    totalIncome(){ return this.incomes.reduce((s,i)=> s + (Number(i.amount)||0), 0); },
-    totalExpense(){ return this.expenses.reduce((s,c)=> s + this.categoryTotal(c), 0); },
-    percentTotal(){ return Math.round(this.expenses.reduce((s,c)=> s + (Number(c.percent)||0), 0)); }
+    hasProfiles(){ return Array.isArray(this.dataStore.profiles) && this.dataStore.profiles.length>0; },
+    currentProfile(){
+      return this.dataStore.profiles.find(p => p.id === this.currentProfileId) || (this.dataStore.profiles[0] || {id:'',name:'(空)',groups:[],categories:[],data:{}});
+    }
   },
   methods:{
-    limitNumber(idxOrCat, type, subIdx){
-      if(type === 'income'){
-        this.incomes[idxOrCat].amount = Math.max(0, Math.min(999999, Number(this.incomes[idxOrCat].amount) || 0));
-      } else if(type === 'expense'){
-        this.expenses[idxOrCat].items[subIdx].amount = Math.max(0, Math.min(999999, Number(this.expenses[idxOrCat].items[subIdx].amount) || 0));
-      }
-      this.triggerSave();
+    // profile
+    createProfile(){ const name = prompt('输入新档案名称：','新档案'); if(!name) return; const p = { id: genUuid('p'), name, isDefault:false, groups:[], categories:[], data:{} }; this.dataStore.profiles.push(p); this.currentProfileId = p.id; this.scheduleSave(); },
+    createDefaultFromEmpty(){ this._createDefaultWithUuid(); this.loadError=''; this.updateCharts(); },
+    switchProfile(){ this.scheduleSave(); this.updateCharts(); },
+    renameProfile(){ const name = prompt('输入新名称：', this.currentProfile.name); if(name){ this.currentProfile.name = name; this.scheduleSave(); } },
+    setDefaultProfile(){ this.dataStore.profiles.forEach(p=> p.isDefault = (p.id===this.currentProfileId)); this.scheduleSave(); },
+    duplicateProfile(){ if(!confirm('复制当前档案？仅新增 profile id，内部 ids 保持不变。')) return; const src = this.currentProfile; const clone = deepClone(src); clone.id = genUuid('p'); clone.name = src.name + ' (复制)'; clone.isDefault = false; this.dataStore.profiles.push(clone); this.currentProfileId = clone.id; this.scheduleSave(); alert('已复制档案：' + clone.name); },
+    deleteProfile(){ if(!confirm('删除当前档案？建议先导出备份。')) return; const idx = this.dataStore.profiles.findIndex(p=>p.id===this.currentProfileId); if(idx>=0) this.dataStore.profiles.splice(idx,1); this.currentProfileId = this.dataStore.profiles[0] ? this.dataStore.profiles[0].id : null; this.scheduleSave(); },
+
+    // groups
+    addGroup(){ if(!this.newGroupName) { alert('请输入分组名'); return; } const g = { id: genUuid('g'), name: this.newGroupName, color: this.newGroupColor }; if(!this.currentProfile.groups) this.currentProfile.groups = []; this.currentProfile.groups.push(g); this.newGroupName=''; this.scheduleSave(); },
+    removeGroup(gi){ if(!confirm('删除分组并从所有项目移除引用？')) return; const gid = this.currentProfile.groups[gi].id; this.currentProfile.groups.splice(gi,1); if(this.currentProfile.data){ for(const arr of Object.values(this.currentProfile.data||{})){ arr.forEach(cat => { (cat.items||[]).forEach(it => { it.groupIds = (it.groupIds||[]).filter(x=>x!==gid); }); }); } } this.scheduleSave(); },
+    assignGroupToAll(gid){ if(this.currentProfile.data){ for(const arr of Object.values(this.currentProfile.data||{})){ arr.forEach(cat => { (cat.items||[]).forEach(it => { it.groupIds = it.groupIds || []; if(!it.groupIds.includes(gid)) it.groupIds.push(gid); }); }); } } this.scheduleSave(); },
+    moveGroupUp(idx){ if(idx<=0) return; const arr=this.currentProfile.groups; arr.splice(idx-1,0,arr.splice(idx,1)[0]); this.scheduleSave(); },
+    moveGroupDown(idx){ const arr=this.currentProfile.groups; if(idx>=arr.length-1) return; arr.splice(idx+1,0,arr.splice(idx,1)[0]); this.scheduleSave(); },
+
+    // categories
+    addCategory(){ if(!this.newCategoryName) { alert('请输入类别名'); return; } const c = { id: genUuid('c'), name: this.newCategoryName, direction: this.newCategoryDir, color: this.newCategoryColor }; if(c.direction==='out') c.percentOfTotalIn=0; if(!this.currentProfile.categories) this.currentProfile.categories=[]; this.currentProfile.categories.push(c); if(!this.currentProfile.data) this.currentProfile.data = {}; this.currentProfile.data[c.id]=[]; this.newCategoryName=''; this.scheduleSave(); },
+    removeCategory(ci){ if(!confirm('删除类别及其数据？')) return; const cid = this.currentProfile.categories[ci].id; this.currentProfile.categories.splice(ci,1); if(this.currentProfile.data) delete this.currentProfile.data[cid]; this.scheduleSave(); },
+    moveCategoryUp(idx){ if(idx<=0) return; const arr=this.currentProfile.categories; arr.splice(idx-1,0,arr.splice(idx,1)[0]); this.scheduleSave(); },
+    moveCategoryDown(idx){ const arr=this.currentProfile.categories; if(idx>=arr.length-1) return; arr.splice(idx+1,0,arr.splice(idx,1)[0]); this.scheduleSave(); },
+    onCategoryDirectionChange(c){ if(c.direction==='out' && c.percentOfTotalIn===undefined) c.percentOfTotalIn=0; if(c.direction==='in' && c.percentOfTotalIn!==undefined) delete c.percentOfTotalIn; this.scheduleSave(); },
+
+    addCategoryGroup(){ if(!this.editingCategoryId){ alert('请选择类别'); return; } const arr=this.currentProfile.data[this.editingCategoryId]=this.currentProfile.data[this.editingCategoryId]||[]; arr.push({ name:'新组', percent: (this.isCurrentCategoryOut(this.editingCategoryId)?0:undefined), items: [] }); this.scheduleSave(); },
+    addGroupToCategory(){ this.addCategoryGroup(); },
+    addItemToSpecificGroup(cid, gi){ const arr=this.currentProfile.data[cid]||[]; if(!arr[gi]) return; arr[gi].items = arr[gi].items||[]; arr[gi].items.push({ id: genUuid('it'), name:'新细项', amount:0, groupIds: [] }); this.expandKey(cid,gi); this.scheduleSave(); },
+    addItemToGroup(){ if(!this.editingCategoryId){ alert('请选择类别'); return; } const arr=this.currentProfile.data[this.editingCategoryId]||[]; if(arr.length===0){ alert('请先新增一个组'); return; } const grp = arr[arr.length-1]; grp.items = grp.items||[]; grp.items.push({ id: genUuid('it'), name:'新细项', amount:0, groupIds: [] }); this.expandKey(this.editingCategoryId, arr.length-1); this.scheduleSave(); },
+
+    removeItem(cid, gi, ii){ if(!confirm('删除细项？')) return; this.currentProfile.data[cid][gi].items.splice(ii,1); this.scheduleSave(); },
+
+    moveItemUp(cid, gi, ii){ const arr = this.currentProfile.data[cid][gi].items; if(ii<=0) return; arr.splice(ii-1,0,arr.splice(ii,1)[0]); this.expandKey(cid,gi); this.scheduleSave(); },
+    moveItemDown(cid, gi, ii){ const arr = this.currentProfile.data[cid][gi].items; if(ii>=arr.length-1) return; arr.splice(ii+1,0,arr.splice(ii,1)[0]); this.expandKey(cid,gi); this.scheduleSave(); },
+    moveGroupInCategoryUp(cid, gi){ const arr = this.currentProfile.data[cid]; if(gi<=0) return; arr.splice(gi-1,0,arr.splice(gi,1)[0]); this.scheduleSave(); },
+    moveGroupInCategoryDown(cid, gi){ const arr = this.currentProfile.data[cid]; if(gi>=arr.length-1) return; arr.splice(gi+1,0,arr.splice(gi,1)[0]); this.scheduleSave(); },
+
+    limitAmount(it){ it.amount = Math.max(0, Math.min(99999999, Number(it.amount)||0)); this.scheduleSave(); },
+
+    sanitizePct(obj, key){ if(obj && typeof obj[key]==='number'){ if(obj[key]<0) obj[key]=0; if(obj[key]>100) obj[key]=100; this.scheduleSave(); } },
+
+    // collapse helpers
+    keyFor(cid, gi){ return `${cid}::${gi}`; },
+    isGroupExpanded(cid, gi){ const k = this.keyFor(cid,gi); if(this.expandedMap[k]===undefined) return true; return !!this.expandedMap[k]; },
+    toggleGroupCollapse(cid, gi){ const k=this.keyFor(cid,gi); this.expandedMap[k]=!this.isGroupExpanded(cid,gi); },
+    expandKey(cid, gi){ const k=this.keyFor(cid,gi); this.expandedMap[k]=true; },
+
+    ensureItemVisible(cid, gi, ii){ this.expandKey(cid,gi); },
+    ensureGroupVisible(gid){ /* noop placeholder */ },
+
+    onItemEdit(cid, gi, ii){ this.expandKey(cid,gi); this.scheduleSave(); },
+    onItemAmountChange(it,cid,gi,ii){ it.amount = Math.max(0, Number(it.amount)||0); this.expandKey(cid,gi); this.scheduleSave(); },
+
+    // color editing
+    openColorPicker(type, index){
+      this.pendingColorEdit = { type, index, orig: this._getColor(type,index) || '#ffffff' };
+      const picker = document.getElementById('hiddenColorPicker');
+      picker.value = this.pendingColorEdit.orig;
+      picker.click();
     },
-    addIncome(){ this.incomes.push({name:'', amount:0}); this.triggerSave(); },
-    removeIncome(i){ if(confirm('删除该收入项？')){ this.incomes.splice(i,1); this.triggerSave(); } },
-    moveIncomeUp(i){ if(i>0){ [this.incomes[i-1], this.incomes[i]] = [this.incomes[i], this.incomes[i-1]]; this.triggerSave(); } },
-    moveIncomeDown(i){ if(i < this.incomes.length-1){ [this.incomes[i+1], this.incomes[i]] = [this.incomes[i], this.incomes[i+1]]; this.triggerSave(); } },
-
-    addExpenseCategory(){ this.expenses.push({name:'新分类', percent:0, items:[{name:'细项', amount:0}]}); this.triggerSave(); },
-    removeCategory(ci){ if(confirm('删除分类及其细项？')){ this.expenses.splice(ci,1); this.triggerSave(); } },
-    moveCategoryUp(ci){ if(ci>0){ [this.expenses[ci-1], this.expenses[ci]] = [this.expenses[ci], this.expenses[ci-1]]; this.triggerSave(); } },
-    moveCategoryDown(ci){ if(ci < this.expenses.length-1){ [this.expenses[ci+1], this.expenses[ci]] = [this.expenses[ci], this.expenses[ci+1]]; this.triggerSave(); } },
-    resetDefaultCategories(){ if(confirm('恢复默认五个分类？会替换当前分类。')){ this.expenses = [
-      { name:'投资', percent:25, items:[ {name:'股票', amount:0} ] },
-      { name:'贷款', percent:36, items:[ {name:'房贷', amount:0} ] },
-      { name:'承担', percent:25, items:[ {name:'父母/保险', amount:0} ] },
-      { name:'生活费', percent:12, items:[ {name:'食物/交通', amount:0} ] },
-      { name:'其它', percent:2, items:[ {name:'杂项', amount:0} ] }
-    ]; this.triggerSave(); } },
-
-    addExpenseItem(ci){ this.expenses[ci].items.push({name:'', amount:0}); this.triggerSave(); },
-    removeExpenseItem(ci, ii){ if(confirm('删除该支出细项？')){ this.expenses[ci].items.splice(ii,1); this.triggerSave(); } },
-    moveExpenseItemUp(ci, ii){ if(ii>0){ const arr = this.expenses[ci].items; [arr[ii-1], arr[ii]] = [arr[ii], arr[ii-1]]; this.triggerSave(); } },
-    moveExpenseItemDown(ci, ii){ const arr = this.expenses[ci].items; if(ii < arr.length-1){ [arr[ii+1], arr[ii]] = [arr[ii], arr[ii+1]]; this.triggerSave(); } },
-
-    categoryTotal(cat){ return (cat.items || []).reduce((s,it)=> s + (Number(it.amount)||0), 0); },
-    budgetAmount(cat){ return this.totalIncome * (Number(cat.percent)||0) / 100; },
-
-    triggerSave(){ if(this.autoSave) this.saveNow(); this.updateCharts(); },
-    saveNow(){
-      try{
-        const payload = { version:4, incomes:this.incomes, expenses:this.expenses, savedAt: new Date().toISOString() };
-        localStorage.setItem(this.storageKey, JSON.stringify(payload));
-        this.lastSaved = new Date().toLocaleString();
-      }catch(e){ console.error('save error', e); alert('保存失败：' + e.message); }
+    ensureDefaults() {
+      try {
+        if(!this.dataStore || !this.dataStore.profiles) return;
+        this.dataStore.profiles.forEach(p => {
+          if(!p.groups) p.groups = [];
+          if(!p.categories) p.categories = [];
+          if(!p.data) p.data = {};
+          p.groups.forEach(g => { if(g.collapsed === undefined) g.collapsed = false; if(!g.id) g.id = this.genUuid('g'); });
+          p.categories.forEach(c => { if(!c.id) c.id = this.genUuid('c'); if(c.direction===undefined) c.direction='out'; });
+          Object.keys(p.data || {}).forEach(cid => {
+            (p.data[cid]||[]).forEach(grp=>{
+              if(!grp.items) grp.items = [];
+              (grp.items||[]).forEach(it=>{ if(!it.id) it.id = this.genUuid('it'); if(!it.groupIds) it.groupIds = []; });
+            });
+          });
+        });
+      } catch(e){ console.warn('ensureDefaults error', e); }
     },
-    loadFromStorage(){
-      try{
-        // try primary key first
-        const raw = localStorage.getItem(this.storageKey);
-        if(raw){
-          const p = JSON.parse(raw);
-          // simple validation
-          if(p && (p.incomes || p.expenses)){
-            // if older version numbers, migrate if needed
-            this.migrateAndLoad(p);
-            return;
-          }
+    isCurrentCategoryOut(categoryId) {
+        try {
+            const profile = this.getCurrentProfile();
+            if (!profile || !profile.categories) return false;
+            const category = profile.categories.find(c => c.id === categoryId);
+            if (!category) return false;
+            return category.direction === 'out';
+        } catch (e) {
+            console.warn('isCurrentCategoryOut error', e);
+            return false;
         }
-        // try legacy keys
-        for(const k of this.legacyKeys){
-          const rv = localStorage.getItem(k);
-          if(rv){
-            try{
-              const parsed = JSON.parse(rv);
-              if(parsed && (parsed.incomes || parsed.expenses)){
-                // migrate and save into new key
-                this.migrateAndLoad(parsed);
-                this.saveNow();
-                return;
-              }
-            }catch(e){ console.warn('parse legacy key failed', k, e); }
-          }
-        }
-        // nothing found; keep defaults
-      }catch(e){ console.error('load error', e); }
     },
-    migrateAndLoad(parsed){
-      // Handle various possible shapes
-      // If parsed has version and is >=4, assume compatible
-      if(parsed.version && parsed.version >= 4){
-        this.incomes = parsed.incomes || this.incomes;
-        this.expenses = parsed.expenses || this.expenses;
-        this.lastSaved = parsed.savedAt ? new Date(parsed.savedAt).toLocaleString() : null;
-        return;
+    applyColorChange(e){
+      if(!this.pendingColorEdit) return;
+      const val = e.target.value;
+      const {type,index} = this.pendingColorEdit;
+      if(type==='group'){
+        if(this.currentProfile.groups && this.currentProfile.groups[index]) this.currentProfile.groups[index].color = val;
+      } else if(type==='category'){
+        if(this.currentProfile.categories && this.currentProfile.categories[index]) this.currentProfile.categories[index].color = val;
       }
-      // If older version or no version, attempt to map fields
-      const incomes = parsed.incomes || parsed.incomeList || parsed.sources || [];
-      const expenses = parsed.expenses || parsed.expenseList || parsed.outcomes || [];
-      // Ensure structure: categories have name, percent, items[]
-      const normExpenses = expenses.map(e=>{
-        if(e.items) return e;
-        if(e.subitems) return { name: e.name||'分类', percent: e.percent||0, items: e.subitems };
-        if(e.name && e.amount !== undefined) return { name: e.name, percent: e.percent||0, items:[{name:e.name, amount:e.amount||0}] };
-        return { name: e.name||'分类', percent: e.percent||0, items: e.items||[] };
-      });
-      this.incomes = incomes;
-      this.expenses = normExpenses.length ? normExpenses : this.expenses;
-      this.lastSaved = parsed.savedAt ? new Date(parsed.savedAt).toLocaleString() : null;
+      this.pendingColorEdit = null;
+      this.scheduleSave();
+      this.updateCharts();
+    },
+    _getColor(type,index){
+      if(type==='group') return (this.currentProfile.groups && this.currentProfile.groups[index] && this.currentProfile.groups[index].color) || '#cccccc';
+      if(type==='category') return (this.currentProfile.categories && this.currentProfile.categories[index] && this.currentProfile.categories[index].color) || '#cccccc';
+      return '#cccccc';
     },
 
-    showStorage(){
-      const raw = localStorage.getItem(this.storageKey) || '（无）';
-      const w = window.open('', '_blank');
-      w.document.title = '本地储存内容';
-      w.document.body.innerHTML = '<pre>' + raw.replace(/</g,'&lt;') + '</pre>';
-    },
-
-        // import JSON (file input)
-    importJSON(){
-      document.getElementById('fileImport').value = null;
-      document.getElementById('fileImport').click();
+    // import/export
+    triggerImport(){
+      let inp = document.getElementById('fileImport') || document.getElementById('fileImport2');
+      if(!inp){
+        inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = '.json';
+        inp.style.display = 'none';
+        document.body.appendChild(inp);
+        inp.addEventListener('change', (e)=> this.onFileImport(e));
+      }
+      try {
+        inp.click();
+      } catch(e) {
+        console.error('triggerImport click failed', e);
+        alert('无法触发文件选择，请手动使用导入按钮');
+      }
     },
     onFileImport(evt){
-      const f = evt.target.files[0];
+      const f = (evt.target && evt.target.files) ? evt.target.files[0] : null;
       if(!f) return;
       const reader = new FileReader();
       reader.onload = (e) => {
         try{
           const parsed = JSON.parse(e.target.result);
           if(!parsed) throw new Error('JSON 无效');
-          if(parsed.version && parsed.version >= 2){
-            if(confirm('选择「确定」将用导入的数据替换当前并保存；按「取消」则合并到当前数据（保留现有项）。')){
-              this.incomes = parsed.incomes || [];
-              this.expenses = parsed.expenses || [];
-            } else {
-              this.incomes = this.incomes.concat(parsed.incomes || []);
-              this.expenses = this.expenses.concat(parsed.expenses || []);
-            }
-            this.saveNow();
-            this.updateCharts();
-            alert('导入完成');
-            return;
+          let newData = parsed.version && parsed.version>=5 ? parsed : this.migrateToV5(parsed);
+          if(!newData || !newData.profiles) throw new Error('导入的数据无法转换为 v5 schema');
+          if(confirm('导入将覆盖当前数据吗？确定覆盖，取消则合并。')){
+            this.dataStore = newData;
+            this.currentProfileId = this.dataStore.profiles[0].id;
+          } else {
+            if(newData.profiles) this.dataStore.profiles = this.dataStore.profiles.concat(newData.profiles);
           }
-          if(parsed.incomes || parsed.expenses){
-            if(confirm('导入数据是否替换当前？选择「确定」替换，「取消」合并。')){
-              this.incomes = parsed.incomes || [];
-              this.expenses = parsed.expenses || [];
-            } else {
-              this.incomes = this.incomes.concat(parsed.incomes || []);
-              this.expenses = this.expenses.concat(parsed.expenses || []);
-            }
-            this.saveNow();
-            this.updateCharts();
-            alert('导入完成（兼容旧结构）');
-            return;
-          }
-          alert('无法识别的 JSON 格式');
+          this.scheduleSave();
+          this.updateCharts();
+          alert('导入完成');
         }catch(err){
-          alert('导入失败：' + err.message);
+          alert('导入失败：' + (err.message || err));
         }
       };
       reader.readAsText(f);
@@ -376,156 +466,317 @@ createApp({
 
     exportJSON(){
       try{
-        const payload = { version:4, incomes:this.incomes, expenses:this.expenses, savedAt:new Date().toISOString() };
+        const payload = this.dataStore;
         const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
-        const fname = `income_expense_backup_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+        const fname = `finance_backup_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
         saveAs(blob, fname);
-      }catch(e){ alert('导出JSON失败：' + e.message); }
+      }catch(e){
+        alert('导出失败：' + e.message);
+      }
     },
 
     async exportExcel(){
       try{
         const wb = new ExcelJS.Workbook();
-        const ws = wb.addWorksheet('收入支出规划');
-
-        const title = `个人理财规划 by Hau Hau - ${new Date().toLocaleString()}`;
-        ws.mergeCells('A1','F1');
-        ws.getCell('A1').value = title;
-        ws.getCell('A1').font = { size:14, bold:true };
-        ws.getRow(1).height = 24;
-
-        let r = 3;
-        ws.getCell('A'+r).value = '收入区';
-        ws.getCell('A'+r).font = { bold:true };
-        r++;
-        ws.getRow(r).values = ['项目', '金额 (RM)'];
-        ws.getRow(r).eachCell(c => c.font = { bold:true });
-        r++;
-
-        const incStart = r;
-        for(const inc of this.incomes){
-          ws.getCell('A'+r).value = inc.name || '';
-          ws.getCell('B'+r).value = Number(inc.amount) || 0;
-          r++;
-        }
-        const incEnd = r-1;
-        ws.getCell('A'+r).value = '收入总计';
-        if(incEnd >= incStart){
-          ws.getCell('B'+r).value = { formula: `SUM(B${incStart}:B${incEnd})` };
-        } else {
-          ws.getCell('B'+r).value = 0;
-        }
-        const incomeTotalCell = 'B'+r;
-        ws.getCell(incomeTotalCell).numFmt = '0.00';
-        r += 2;
-
-        ws.getCell('A'+r).value = '支出区';
-        ws.getCell('A'+r).font = { bold:true };
-        r++;
-        ws.getRow(r).values = ['分类','比例 (%)','细项','金额 (RM)','分类小计 (公式)','预算 (公式)'];
-        ws.getRow(r).eachCell(c => c.font = { bold:true });
-        r++;
-
-        const subtotalCells = [];
-        for(const cat of this.expenses){
-          const catRowStart = r;
-          ws.getCell('A'+r).value = cat.name || '';
-          ws.getCell('B'+r).value = Number(cat.percent) || 0;
-          if((cat.items||[]).length > 0){
-            ws.getCell('C'+r).value = cat.items[0].name || '';
-            ws.getCell('D'+r).value = Number(cat.items[0].amount) || 0;
-            r++;
-            for(let i=1;i<cat.items.length;i++){
-              ws.getCell('C'+r).value = cat.items[i].name || '';
-              ws.getCell('D'+r).value = Number(cat.items[i].amount) || 0;
-              r++;
+        for(const p of this.dataStore.profiles){
+          const ws = wb.addWorksheet(p.name.slice(0,30));
+          ws.getRow(1).values = ['类型','档案ID','档案名','分组ID(逗号)','分组名(逗号)','分类ID','分类名','组名','组占比(%)','项目名','金额','项目ID'];
+          ws.getRow(1).eachCell(c => c.font = { bold:true });
+          let r = 2;
+          for(const cid of Object.keys(p.data || {})){
+            const catDef = (p.categories||[]).find(x=>x.id===cid) || {};
+            for(const grp of (p.data[cid]||[])){
+              for(const it of (grp.items||[])){
+                const gids = (it.groupIds||[]).join(',');
+                const gnames = (it.groupIds||[]).map(gid=> (p.groups||[]).find(g=>g.id===gid)?.name || '').filter(x=>x).join(',');
+                ws.getCell('A'+r).value = catDef.direction === 'in' ? '收入' : '支出';
+                ws.getCell('B'+r).value = p.id;
+                ws.getCell('C'+r).value = p.name;
+                ws.getCell('D'+r).value = gids;
+                ws.getCell('E'+r).value = gnames;
+                ws.getCell('F'+r).value = cid;
+                ws.getCell('G'+r).value = catDef.name || '';
+                ws.getCell('H'+r).value = grp.name || '';
+                ws.getCell('I'+r).value = Number(grp.percent||0);
+                ws.getCell('J'+r).value = it.name || '';
+                ws.getCell('K'+r).value = Number(it.amount||0);
+                ws.getCell('L'+r).value = it.id;
+                r++;
+              }
             }
-          } else {
-              ws.getCell('C'+r).value = '';
-              ws.getCell('D'+r).value = 0;
-              r++;
           }
-          const catRowEnd = r-1;
-          ws.getCell('E'+r).value = { formula: `SUM(D${catRowStart}:D${catRowEnd})` };
-          subtotalCells.push('E'+r);
-          ws.getCell('F'+r).value = { formula: `${incomeTotalCell} * B${catRowStart} / 100` };
-          ws.getCell('F'+r).numFmt = '0.00';
-          r++;
         }
-
-        ws.getCell('C'+r).value = '支出总计';
-        if(subtotalCells.length){
-          ws.getCell('D'+r).value = { formula: `SUM(${subtotalCells.join(',')})` };
-        } else {
-          ws.getCell('D'+r).value = 0;
-        }
-        ws.getCell('D'+r).numFmt = '0.00';
-        const totalExpenseCell = 'D'+r;
-        r += 2;
-
-        ws.getCell('C'+r).value = '结余 (收入 - 支出)';
-        ws.getCell('D'+r).value = { formula: `${incomeTotalCell} - ${totalExpenseCell}` };
-        ws.getCell('D'+r).numFmt = '0.00';
-        r+=2;
-
-        ws.getCell('A'+r).value = '分配总百分比（页面计算）';
-        ws.getCell('B'+r).value = this.percentTotal;
-        r+=1;
-
-        ws.getColumn(1).width = 22;
-        ws.getColumn(2).width = 12;
-        ws.getColumn(3).width = 26;
-        ws.getColumn(4).width = 14;
-        ws.getColumn(5).width = 14;
-        ws.getColumn(6).width = 18;
-
         const buf = await wb.xlsx.writeBuffer();
         const blob = new Blob([buf], { type: 'application/octet-stream' });
-        const fname = `收入支出规划_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.xlsx`;
+        const fname = `finance_export_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.xlsx`;
         saveAs(blob, fname);
       }catch(err){
-        console.error(err);
-        alert('导出 Excel 失败：' + (err.message || err));
+        alert('导出 Excel 失败：' + err.message);
       }
     },
 
-    saveNowHandler(){ this.saveNow(); alert('已保存到本地'); },
-    clearAllConfirm(){ if(confirm('确定要清空所有数据并恢复默认？')){ localStorage.removeItem(this.storageKey); location.reload(); } },
+    // save (debounced)
+    scheduleSave(){ if(!this.autoSave) return; if(this.saveTimer) clearTimeout(this.saveTimer); this.saveTimer = setTimeout(()=> this._doSave(), 1000); },
+    _doSave(){ if(this.saveLock) return; try{ this.saveLock = true; const payload = JSON.parse(JSON.stringify(this.dataStore || { version:5, profiles: [] })); payload.version = 5; payload.lastUpdated = new Date().toISOString(); localStorage.setItem(this.storageKey, JSON.stringify(payload)); this.savingSilently = true; this.lastSaved = new Date().toLocaleString(); setTimeout(()=>{ this.savingSilently = false; }, 50); console.info('💾 Saved dataStore', payload); }catch(e){ console.error('保存失败', e); } finally{ setTimeout(()=>{ this.saveLock = false; }, 300); } },
 
+    // charts: stacked per category with series per group (including 'other')
     updateCharts(){
-      const incLabels = this.incomes.map(i => i.name || '未命名');
-      const incData = this.incomes.map(i => Number(i.amount) || 0);
-      const incCtx = document.getElementById('incomeChart').getContext('2d');
-      if(this.incomeChart) this.incomeChart.destroy();
-      this.incomeChart = new Chart(incCtx, {
-        type:'pie',
-        data:{ labels:incLabels, datasets:[{ data:incData }] },
-        options:{ responsive:true, plugins:{ legend:{position:'bottom'} } }
-      });
+      try{
+        const catDefs = this.currentProfile.categories || [];
+        const data = this.currentProfile.data || {};
+        // determine groups list including 'other'
+        const groups = (this.currentProfile.groups||[]).map(g=>({ id: g.id, name: g.name, color: g.color || '#bbb' }));
+        groups.push({ id:'other', name:'其它', color: getComputedStyle(document.documentElement).getPropertyValue('--other').trim() || '#bdbdbd' });
 
-      const expLabels = this.expenses.map(c => c.name || '未命名');
-      const expData = this.expenses.map(c => this.categoryTotal(c));
-      const expCtx = document.getElementById('expenseChart').getContext('2d');
-      if(this.expenseChart) this.expenseChart.destroy();
-      this.expenseChart = new Chart(expCtx, {
-        type:'pie',
-        data:{ labels:expLabels, datasets:[{ data:expData }] },
-        options:{ responsive:true, plugins:{ legend:{position:'bottom'} } }
-      });
-    }
-  },
-  watch:{
-    incomes: { handler(){ this.triggerSave(); }, deep:true },
-    expenses: { handler(){ this.triggerSave(); }, deep:true }
+        // filter function for group filter
+        const groupMatches = (it, gidFilter) => {
+          if(gidFilter === 'all') return true;
+          if(gidFilter === 'other') return !(it.groupIds && it.groupIds.length);
+          return (it.groupIds||[]).includes(gidFilter);
+        };
+
+        if(this.chartDirection === 'in' || this.chartDirection === 'out'){
+          // x axis = categories of the chosen direction
+          const cats = catDefs.filter(c=>c.direction === this.chartDirection);
+          const xLabels = cats.map(c=>c.name);
+
+          // build series per group
+          const series = groups.map(g=>{
+            // for each category compute sum of items that belong to this group (or other)
+            const dataVals = cats.map(c=>{
+              let sum = 0;
+              (data[c.id]||[]).forEach(grp=>{
+                (grp.items||[]).forEach(it=>{
+                  if(this.chartGroupFilter !== 'all' && this.chartGroupFilter !== g.id){
+                    // if user selected specific group, only include matching group
+                    return;
+                  }
+                  if(groupMatches(it, g.id)){
+                    sum += Number(it.amount||0);
+                  }
+                });
+              });
+              return sum;
+            });
+            return { name: g.name, type:'bar', stack: 'groups', emphasis: { focus: 'series' }, data: dataVals, itemStyle: { color: g.color } };
+          });
+
+          // if chartGroupFilter is specific (not all), reduce series to only that group
+          let finalSeries = series;
+          if(this.chartGroupFilter !== 'all'){
+            finalSeries = series.filter((s,idx)=>{
+              return groups[idx].id === this.chartGroupFilter;
+            });
+          }
+
+          // prepare stacked chart options
+          const barDom = document.getElementById('chartCategory');
+          if(barDom){
+            try{ if(this.categoryChartInstance){ this.categoryChartInstance.dispose(); this.categoryChartInstance=null; } }catch(e){}
+            this.categoryChartInstance = echarts.init(barDom);
+            const option = {
+              title:{ text: this.chartDirection==='in' ? '按类别与分组堆叠（Income）' : '按类别与分组堆叠（Expense）', left:'center' },
+              tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+              legend: { orient: 'horizontal', bottom: 0 },
+              xAxis: { type: 'category', data: xLabels, axisLabel:{interval:0} },
+              yAxis: { type: 'value' },
+              series: finalSeries
+            };
+            this.categoryChartInstance.setOption(option);
+          }
+
+          // pie chart: for 'all' show totals per group across categories; for single group show breakdown across categories
+          const pieDom = document.getElementById('chartGroup');
+          if(pieDom){
+            try{ if(this.groupChartInstance){ this.groupChartInstance.dispose(); this.groupChartInstance=null; } }catch(e){}
+            this.groupChartInstance = echarts.init(pieDom);
+            if(this.chartGroupFilter === 'all'){
+              // totals per group
+              const pieData = groups.map((g,gi)=>{
+                let total=0;
+                catDefs.filter(c=>c.direction===this.chartDirection).forEach(c=>{
+                  (data[c.id]||[]).forEach(grp=>{
+                    (grp.items||[]).forEach(it=>{
+                      if(groupMatches(it, g.id)) total += Number(it.amount||0);
+                    });
+                  });
+                });
+                return { id: g.id, name: g.name, label: g.name + ' ('+total.toFixed(0)+')', value: total, itemStyle:{ color: g.color } };
+              }).filter(d=>d.value>0);
+              // compute totals to show center and relative percentages
+              const totalSum = pieData.reduce((s,x)=>s + (Number(x.value)||0), 0);
+              // compute totalIn for comparison when direction is out (to show relative to income)
+              let totalIn = 0;
+              catDefs.filter(c=>c.direction==='in').forEach(c=> (data[c.id]||[]).forEach(gp => (gp.items||[]).forEach(it=> totalIn += Number(it.amount||0))));
+              const centerText = this.chartDirection==='in' 
+                ? ('总额 ' + totalSum.toFixed(0))
+                : ('总额 ' + totalSum.toFixed(0) + (totalIn>0 ? ('\n占收入 ' + (totalSum/totalIn*100).toFixed(1) + '%') : ''));
+              const option = { 
+                title:{ text: centerText, left:'center', top:'45%', textStyle:{ fontSize:14, lineHeight:18, align:'center' } }, 
+                tooltip:{ trigger:'item', formatter: function(params){
+                    // params: { name, value, percent } percent is percent of pie
+                    // compute percent of totalIn as well
+                    const pctOfPie = params.percent.toFixed(1) + '%';
+                    let pctOfIn = '';
+                    if(totalIn>0){
+                      pctOfIn = '\n占收入 ' + (Number(params.value) / totalIn * 100).toFixed(1) + '%';
+                    }
+                    return params.name + ': ' + params.value + ' (' + pctOfPie + ')' + pctOfIn;
+                } }, 
+                series:[{ type:'pie', radius:'55%', data: pieData, label: { formatter: '{b}\n{d}%' } }] 
+              };
+              this.groupChartInstance.setOption(option);
+            } else {
+              // specific group: show breakdown across categories for that group
+              const gid = this.chartGroupFilter;
+              const g = groups.find(x=>x.id===gid) || groups.find(x=>x.id==='other');
+              const pieData = catDefs.filter(c=>c.direction===this.chartDirection).map(c=>{
+                let sum=0;
+                (data[c.id]||[]).forEach(grp=>{
+                  (grp.items||[]).forEach(it=>{
+                    if(groupMatches(it, gid)) sum += Number(it.amount||0);
+                  });
+                });
+                return { name: c.name + ' ('+sum.toFixed(0)+')', value: sum };
+              }).filter(d=>d.value>0);
+              const option = { title:{ text: `${g ? g.name : '分组'} 在各类别分布`, left:'center' }, tooltip:{ trigger:'item' }, series:[{ type:'pie', radius:'55%', data: pieData, itemStyle:{ color: g ? g.color : undefined } }] };
+              this.groupChartInstance.setOption(option);
+            }
+          }
+        }
+      }catch(e){
+        console.error('updateCharts failed', e);
+      }
+    },
+
+    // load & migration (same as before)
+    loadFromStorage(){
+      try{
+        const raw = localStorage.getItem(this.storageKey);
+        if(raw){
+          let parsed;
+          try{ parsed = JSON.parse(raw); }catch(e){ throw new Error('本地 JSON 无效: ' + e.message); }
+          if(parsed && parsed.version && parsed.version >=5 && parsed.profiles && parsed.profiles.length>0){
+            this.dataStore = parsed;
+            if(!this.dataStore.profiles.some(p=>p.isDefault)) this.dataStore.profiles[0].isDefault = true;
+            this.currentProfileId = this.dataStore.profiles.find(p=>p.isDefault)?.id || this.dataStore.profiles[0].id;
+            console.info('Loaded v5 data from storage');
+            return;
+          } else {
+            const migrated = this.migrateToV5(parsed);
+            if(migrated && migrated.profiles && migrated.profiles.length>0){
+              this.dataStore = migrated;
+              this.currentProfileId = this.dataStore.profiles.find(p=>p.isDefault)?.id || this.dataStore.profiles[0].id;
+              this._doSave();
+              console.info('Migrated legacy data to v5 and saved');
+              return;
+            }
+            throw new Error('本地数据不符合预期结构');
+          }
+        }
+
+        for(const k of this.legacyKeys){
+          try{
+            const rv = localStorage.getItem(k);
+            if(!rv) continue;
+            const parsed = JSON.parse(rv);
+            const migrated = this.migrateToV5(parsed);
+            if(migrated && migrated.profiles && migrated.profiles.length>0){
+              this.dataStore = migrated;
+              this.currentProfileId = this.dataStore.profiles.find(p=>p.isDefault)?.id || this.dataStore.profiles[0].id;
+              this._doSave();
+              console.info('Migrated legacy key', k);
+              return;
+            }
+          }catch(e){ console.warn('legacy key parse failed', k, e); continue; }
+        }
+
+        this._createDefaultWithUuid();
+        console.info('No local data found, created default profile');
+      }catch(e){
+        console.error('加载失败，使用默认回退：', e);
+        this.loadError = e.message || String(e);
+        this._createDefaultWithUuid();
+      }
+    },
+
+    _createDefaultWithUuid(){
+      const pId = genUuid('p');
+      const gId = genUuid('g');
+      const cIn = { id: genUuid('c'), name:'收入区', direction:'in', color:'#FFA300' };
+      const cOut = { id: genUuid('c'), name:'支出区', direction:'out', color:'#FFA350', percentOfTotalIn:36 };
+      const it1 = { id: genUuid('it'), name:'主业', amount:5000, groupIds: [] };
+      const it2 = { id: genUuid('it'), name:'房贷', amount:1200, groupIds: [gId] };
+      const profile = {
+        id: pId,
+        name: '默认档案',
+        isDefault: true,
+        groups: [ { id: gId, name: '固定支出', color:'#FFA500' } ],
+        categories: [cIn, cOut],
+        data: {
+          [cIn.id]: [ { name: '工资', items: [ it1 ] } ],
+          [cOut.id]: [ { name: '贷款', percent:30, items: [ it2 ] } ]
+        }
+      };
+      this.dataStore = { version:5, profiles: [profile], lastUpdated: new Date().toISOString() };
+      this.currentProfileId = pId;
+      this._doSave();
+    },
+
+    migrateToV5(old){
+      try{
+        if(!old) return null;
+        if(old.version && old.version>=5) return old;
+        const p = { id: genUuid('p'), name: '迁移档案', isDefault:true, groups:[], categories:[], data:{} };
+        if(old.groups && Array.isArray(old.groups)) p.groups = old.groups.map(g=> ({ id: g.id || genUuid('g'), name: g.name, color: g.color || '#ccc' }));
+        const c_in = { id: genUuid('c'), name:'收入区', direction:'in', color:'#FFA300' };
+        const c_out = { id: genUuid('c'), name:'支出区', direction:'out', color:'#FFA350', percentOfTotalIn:25 };
+        p.categories.push(c_in); p.categories.push(c_out);
+        p.data[c_in.id] = []; p.data[c_out.id] = [];
+        if(old.incomes && Array.isArray(old.incomes)){
+          old.incomes.forEach(i=>{
+            if(i.items && Array.isArray(i.items)){
+              p.data[c_in.id].push({ name: i.name || '收入分类', items: i.items.map(it=> ({ id: it.id || genUuid('it'), name: it.name, amount: it.amount, groupIds: it.groupIds || [] })) });
+            } else if(i.amount !== undefined){
+              p.data[c_in.id].push({ name: i.name || '收入', items: [ { id: genUuid('it'), name: i.name || '收入', amount: i.amount, groupIds: [] } ] });
+            }
+          });
+        }
+        if(old.expenses && Array.isArray(old.expenses)){
+          old.expenses.forEach(cat=>{
+            if(cat.items && Array.isArray(cat.items)){
+              p.data[c_out.id].push({ name: cat.name || '支出分类', percent: cat.percent || 0, items: cat.items.map(it=> ({ id: it.id || genUuid('it'), name: it.name, amount: it.amount, groupIds: it.groupIds || [] })) });
+            } else if(cat.name && cat.amount !== undefined){
+              p.data[c_out.id].push({ name: cat.name, percent: cat.percent || 0, items: [ { id: genUuid('it'), name: cat.name, amount: cat.amount, groupIds: cat.groupIds || [] } ] });
+            }
+          });
+        }
+        return { version:5, profiles:[p], lastUpdated: new Date().toISOString() };
+      }catch(e){
+        console.error('migrateToV5 failed', e);
+        return null;
+      }
+    },
+
+    clearAllConfirm(){ if(confirm('确定清空所有数据？请先导出备份。')){ localStorage.removeItem(this.storageKey); location.reload(); } }
   },
   mounted(){
-    this.loadFromStorage();
-    this.updateCharts();
-    const raw = localStorage.getItem(this.storageKey);
-    if(raw){
-      try{ const p = JSON.parse(raw); if(p.savedAt) this.lastSaved = new Date(p.savedAt).toLocaleString(); }catch(e){}
+      this.ensureDefaults();
+    if(!this.dataStore) this.dataStore = { version:5, profiles: [] };
+    try{ this.loadFromStorage(); }catch(e){ console.error('mounted load error', e); this.loadError = e.message || String(e); this._createDefaultWithUuid(); }
+    if(!this.currentProfileId && this.dataStore.profiles && this.dataStore.profiles[0]) this.currentProfileId = this.dataStore.profiles[0].id;
+    setTimeout(()=>{ this.updateCharts(); }, 500);
+    setInterval(()=>{ if(this.autoSave) this.scheduleSave(); }, 20000);
+    window.addEventListener('resize', ()=>{ try{ if(this.groupChartInstance) this.groupChartInstance.resize(); }catch(e){}; try{ if(this.categoryChartInstance) this.categoryChartInstance.resize(); }catch(e){}; });
+  },
+  watch:{
+    dataStore:{
+      handler(newVal, oldVal){
+        if(this.savingSilently) return;
+        this.scheduleSave();
+      },
+      deep:true
     }
-    setInterval(()=>{ if(this.autoSave) this.saveNow(); }, 10000);
   }
 }).mount('#app');
 </script>
