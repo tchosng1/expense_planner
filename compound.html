@@ -1,1113 +1,199 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width,initial-scale=1,maximum-scale=1"
-    />
-    <title>复利计算器 v4 — 年度分解 + 折叠渲染</title>
-    <meta
-      name="description"
-      content="移动优先、离线可用的复利/贷款计算器。支持档案管理、导入导出、年度分解表与图表（年初本金 / 年利息 / 年末累计）。"
-    />
-    <style>
-      :root {
-        --bg: #0b1220;
-        --card: #071427;
-        --accent: #06b6d4;
-        --muted: #94a3b8;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC",
-          "Noto Sans CJK SC", Arial;
-        color: #e6eef6;
-        background: linear-gradient(180deg, #051024 0%, #07142a 100%);
-      }
-      .app {
-        max-width: 980px;
-        margin: 0 auto;
-        padding: 12px;
-      }
-      .card {
-        background: linear-gradient(
-          180deg,
-          rgba(255, 255, 255, 0.02),
-          rgba(255, 255, 255, 0.01)
-        );
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 12px;
-        box-shadow: 0 6px 18px rgba(2, 6, 23, 0.6);
-      }
-      h1 {
-        font-size: 1.05rem;
-        margin: 0 0 8px;
-      }
-      label {
-        display: block;
-        font-size: 0.88rem;
-        color: var(--muted);
-        margin-bottom: 6px;
-      }
-      input,
-      select,
-      button {
-        font-size: 0.95rem;
-      }
-      input,
-      select {
-        width: 100%;
-        padding: 10px;
-        border-radius: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.04);
-        background: transparent;
-        color: inherit;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 8px;
-      }
-      .row {
-        display: flex;
-        gap: 8px;
-      }
-      .actions {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
-      button {
-        background: var(--accent);
-        color: #04233a;
-        padding: 8px 12px;
-        border-radius: 10px;
-        border: 0;
-        font-weight: 600;
-      }
-      .muted {
-        background: transparent;
-        border: 1px solid rgba(255, 255, 255, 0.04);
-        color: var(--muted);
-        padding: 8px 12px;
-        border-radius: 10px;
-      }
-      .small {
-        font-size: 0.85rem;
-        color: var(--muted);
-      }
-      .profile-controls {
-        display: flex;
-        gap: 6px;
-        align-items: center;
-      }
-      .plot-wrap {
-        height: 360px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 8px;
-      }
-      th,
-      td {
-        padding: 8px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-        text-align: right;
-      }
-      th {
-        color: var(--muted);
-        text-align: left;
-      }
-      details {
-        background: rgba(255, 255, 255, 0.01);
-        padding: 8px;
-        border-radius: 10px;
-      }
-      summary {
-        cursor: pointer;
-        padding: 6px;
-        border-radius: 8px;
-      }
-      @media (min-width: 720px) {
-        .grid {
-          grid-template-columns: repeat(2, 1fr);
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div id="app" class="app">
-      <div class="card">
-        <h1>复利计算器 v4</h1>
-        <div
-          style="
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 8px;
-          "
-        >
-          <div style="display: flex; gap: 8px; align-items: center">
-            <select
-              v-model="activeProfileId"
-              @change="onProfileSelect"
-              style="min-width: 180px; padding: 8px; border-radius: 8px"
-            >
-              <option :value="null">-- 请选择档案 --</option>
-              <option v-for="p in storage.profiles" :key="p.id" :value="p.id">
-                {{p.name}}
-              </option>
-            </select>
-            <div class="profile-controls">
-              <button class="muted" @click="createProfile">🆕 新建</button>
-              <button
-                class="muted"
-                @click="duplicateProfile"
-                :disabled="!activeProfileId"
-              >
-                📄 复制
-              </button>
-              <button
-                class="muted"
-                @click="renameCurrent"
-                :disabled="!activeProfileId"
-              >
-                ✏️ 重命名
-              </button>
-              <button
-                class="muted"
-                @click="deleteCurrent"
-                :disabled="!activeProfileId"
-              >
-                ❌ 删除
-              </button>
-            </div>
-          </div>
-          <div class="small">
-            本地档案: {{storage.profiles.length}} • 最后更新:
-            {{storage.lastUpdated||'-'}}
-          </div>
-        </div>
-
-        <details open>
-          <summary>输入参数（点击收起以节省空间）</summary>
-          <div style="margin-top: 8px">
-            <div class="grid">
-              <div>
-                <label>初始资金 (Initial Capital)</label>
-                <input
-                  v-model.number="form.initial"
-                  inputmode="decimal"
-                  type="number"
-                />
-              </div>
-              <div>
-                <label>每月追加 (Monthly Topup)</label>
-                <input
-                  v-model.number="form.monthlyTopup"
-                  inputmode="decimal"
-                  type="number"
-                />
-              </div>
-              <div>
-                <label>回报率 (Return Rate %)</label>
-                <div class="row">
-                  <input
-                    v-model.number="form.returnRate"
-                    inputmode="decimal"
-                    type="number"
-                  />
-                  <select
-                    v-model="form.returnRateUnit"
-                    style="min-width: 140px"
-                  >
-                    <option value="yearly">年率 (Yearly)</option>
-                    <option value="monthly">月率 (Monthly)</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label>期限 (Duration)</label>
-                <div class="row">
-                  <input
-                    v-model.number="form.duration"
-                    inputmode="decimal"
-                    type="number"
-                  />
-                  <select v-model="form.durationUnit" style="min-width: 140px">
-                    <option value="year">年 (Year)</option>
-                    <option value="month">月 (Month)</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label>复利频率 (Compounding)</label>
-                <select v-model="form.compounding">
-                  <option value="annually">每年 (Annually)</option>
-                  <option value="monthly">每月 (Monthly)</option>
-                </select>
-              </div>
-
-              <div>
-                <label>利息计算基准</label>
-                <select v-model="interestBasis">
-                  <option value="start">按年初本金 (Start)</option>
-                  <option value="startPlusAdded">
-                    按年初本金 + 当年新增 (Start + Added)
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label>档案名称</label>
-                <input
-                  v-model="profileNameInput"
-                  placeholder="输入名称后点【保存】"
-                />
-              </div>
-            </div>
-          </div>
-        </details>
-
-        <div
-          style="
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            margin-top: 10px;
-            justify-content: flex-end;
-          "
-        >
-          <div class="actions">
-            <button @click="saveProfile">💾 保存</button>
-            <button @click="onCalculate">🧮 计算并渲染</button>
-            <button class="muted" @click="reloadRender">🔁 重新渲染</button>
-            <button class="muted" @click="resetForm">🧹 重置</button>
-          </div>
-        </div>
-
-        <div
-          style="
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            margin-top: 10px;
-            justify-content: space-between;
-          "
-        >
-          <div class="small">
-            导入/导出 JSON（本地缓存 key 固定为 <code>compound_profiles</code>）
-          </div>
-          <div style="display: flex; gap: 8px">
-            <button class="muted" @click="exportToFile">⬇️ 导出</button>
-            <label
-              class="muted"
-              style="padding: 6px; border-radius: 8px; cursor: pointer"
-              >⬆️ 导入<input
-                type="file"
-                @change="onImportFile"
-                accept=".json"
-                style="display: none"
-            /></label>
-          </div>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>复利计算器 (Mobile First, Offline)</title>
+  <link rel="manifest" href="manifest.json" />
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 10px; background: #f9f9f9; }
+    .card { background: white; border-radius: 10px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 10px; }
+    .input-row { display: flex; flex-direction: column; margin-bottom: 8px; }
+    label { font-size: 0.9em; color: #333; margin-bottom: 2px; }
+    input, select { font-size: 1em; padding: 6px; border: 1px solid #ccc; border-radius: 5px; }
+    button { margin: 5px 3px; padding: 6px 12px; border: none; border-radius: 5px; background: #4CAF50; color: white; font-size: 0.9em; }
+    button:hover { background: #45a049; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 6px; text-align: right; font-size: 0.9em; }
+    th { background: #eee; }
+    .chart-container { position: relative; height: 300px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h2>复利计算器 📈</h2>
+    <div class="card">
+      <div class="input-row">
+        <label>档案管理</label>
+        <select v-model="activeProfileName" @change="loadProfile">
+          <option v-for="p in profiles" :value="p.name">{{p.name}}</option>
+        </select>
+        <div>
+          <button @click="newProfile">新增</button>
+          <button @click="duplicateProfile">复制</button>
+          <button @click="renameProfile">重命名</button>
+          <button @click="deleteProfile">删除</button>
+          <button @click="exportProfiles">导出</button>
+          <input type="file" @change="importProfiles" />
         </div>
       </div>
-
-      <div class="card">
-        <div
-          style="
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-          "
-        >
-          <h3>图表与年度分解</h3>
-          <div>
-            <button class="muted" @click="collapsed = !collapsed">
-              {{collapsed? '展开' : '折叠'}}
-            </button>
-          </div>
-        </div>
-
-        <div v-show="!collapsed">
-          <div class="plot-wrap"><canvas id="chart"></canvas></div>
-          <div
-            style="
-              display: flex;
-              justify-content: flex-end;
-              margin-top: 6px;
-              gap: 8px;
-            "
-          >
-            <button class="muted" @click="toggleStack">切换堆叠</button>
-            <button @click="downloadPNG">下载图片</button>
-          </div>
-        </div>
-
-        <div v-if="timeline && timeline.rows && timeline.rows.length">
-          <table>
-            <thead>
-              <tr>
-                <th>年</th>
-                <th>年初本金</th>
-                <th>当年新增本金</th>
-                <th>当年利息</th>
-                <th>年末累计总额</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in timeline.rows" :key="r.year">
-                <td style="text-align: left">{{r.year}}</td>
-                <td style="text-align: left">
-                  {{formatCurrency(r.startPrincipal)}}
-                </td>
-                <td>{{formatCurrency(r.added)}}</td>
-                <td>{{formatCurrency(r.interest)}}</td>
-                <td>{{formatCurrency(r.endBalance)}}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>比较分析</h3>
-        <div class="compare-list">
-          <template v-for="p in storage.profiles" :key="p.id">
-            <label
-              style="
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                padding: 6px;
-                background: rgba(255, 255, 255, 0.02);
-                border-radius: 8px;
-                margin: 4px 0;
-              "
-            >
-              <input type="checkbox" v-model="compareSelection" :value="p.id" />
-              <small>{{p.name}}</small>
-            </label>
-          </template>
-        </div>
-        <div style="margin-top: 8px; display: flex; gap: 8px">
-          <button @click="calculateComparison">比较并渲染</button>
-          <button class="muted" @click="showComparisonSummary">
-            显示比较摘要
-          </button>
-        </div>
-        <div v-if="comparisonSummary" style="margin-top: 8px">
-          <pre style="white-space: pre-wrap">{{comparisonSummary}}</pre>
-        </div>
-      </div>
-
-      <footer style="text-align: center; margin-top: 12px; color: var(--muted)">
-        建议在 HTTPS / localhost 打开，首次打开会缓存依赖，之后可离线使用。
-      </footer>
     </div>
 
-    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <div class="card">
+      <div class="input-row"><label>初始资金</label><input v-model.number="form.initial" type="number"></div>
+      <div class="input-row"><label>每月追加</label><input v-model.number="form.monthlyTopup" type="number"></div>
+      <div class="input-row"><label>追加期限(年)</label><input v-model.number="form.topupYears" type="number" @input="syncDuration"></div>
+      <div class="input-row"><label>期限(年)</label><input v-model.number="form.duration" type="number"></div>
+      <div class="input-row"><label>参考年份</label><input v-model.number="form.referenceYear" type="number"></div>
+      <div class="input-row">
+        <label>利率 (%)</label>
+        <input v-model.number="form.returnRate" type="number">
+        <select v-model="form.returnRateUnit"><option value="yearly">年利率</option><option value="monthly">月利率</option></select>
+      </div>
+      <div class="input-row">
+        <label>复利频率</label>
+        <select v-model="form.compounding"><option value="yearly">每年</option><option value="monthly">每月</option></select>
+      </div>
+      <div class="input-row">
+        <label>利息计算基准</label>
+        <select v-model="form.interestBase">
+          <option value="start">按年初本金</option>
+          <option value="startPlus">按(年初+当年新增)</option>
+        </select>
+      </div>
+      <div>
+        <button @click="calculate">计算</button>
+        <button @click="resetForm">重置</button>
+        <button @click="reloadChart">🔁 重新渲染</button>
+      </div>
+    </div>
 
-    <script>
-      const STORAGE_KEY = "compound_profiles";
-      const { createApp, ref, reactive, onMounted, nextTick } = Vue;
+    <div class="card">
+      <button @click="toggleChart">{{showChart?'隐藏图表':'显示图表'}}</button>
+      <div v-show="showChart" class="chart-container">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
 
-      createApp({
-        setup() {
-          const CURRENT_SCHEMA_VERSION = 1;
-          const storage = reactive({
-            version: CURRENT_SCHEMA_VERSION,
-            profiles: [],
-            lastUpdated: null,
-          });
+    <div class="card" v-if="tableData.length">
+      <table>
+        <thead>
+          <tr><th>期</th><th>年</th><th>年初本金</th><th>当年新增本金</th><th>本金累计</th><th>当年利息</th><th>年末累计总额</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="(row,i) in tableData" :key="i">
+            <td>{{i+1}}</td><td>{{row.year}}</td>
+            <td>{{row.start.toFixed(2)}}</td><td>{{row.added.toFixed(2)}}</td>
+            <td>{{row.totalPrincipal.toFixed(2)}}</td>
+            <td>{{row.interest.toFixed(2)}}</td><td>{{row.end.toFixed(2)}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
-          const defaultForm = () => ({
-            initial: 10000,
-            monthlyTopup: 0,
-            returnRate: 5,
-            returnRateUnit: "yearly",
-            duration: 10,
-            durationUnit: "year",
-            compounding: "annually",
-          });
-          const form = reactive(defaultForm());
-          const profileNameInput = ref("");
-          const activeProfileId = ref(null);
-          const chartInstance = ref(null);
-          const stacked = ref(false);
-          const comparisonSummary = ref("");
-          const compareSelection = ref([]);
-          const timeline = reactive({ rows: [] });
-          const collapsed = ref(false);
-          const interestBasis = ref("startPlusAdded");
-          let lastRender = { mode: null, datasets: [], labels: [] };
+  <script>
+    const STORAGE_KEY = "compound_profiles";
 
-          onMounted(async () => {
-            const data = loadFromLocal();
-            storage.version = data.version || CURRENT_SCHEMA_VERSION;
-            storage.profiles = data.profiles || [];
-            storage.lastUpdated = data.lastUpdated || null;
-            if (storage.profiles.length > 0) {
-              activeProfileId.value = storage.profiles[0].id;
-              loadProfileToForm(activeProfileId.value);
-            }
-            await nextTick();
-            initChart();
-            tryRegisterSW();
-          });
-
-          // helpers
-          function nowISOString() {
-            return new Date().toISOString();
-          }
-          function formatCurrency(v) {
-            if (!isFinite(v)) return "-";
-            return Number(v).toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            });
-          }
-
-          function loadFromLocal() {
-            try {
-              const raw = localStorage.getItem(STORAGE_KEY);
-              if (!raw)
-                return {
-                  version: CURRENT_SCHEMA_VERSION,
-                  profiles: [],
-                  lastUpdated: null,
-                };
-              const parsed = JSON.parse(raw);
-              return migrateIfNeeded(parsed);
-            } catch (e) {
-              console.error("读取本地档案失败", e);
-              return {
-                version: CURRENT_SCHEMA_VERSION,
-                profiles: [],
-                lastUpdated: null,
-              };
-            }
-          }
-          function saveToLocal() {
-            try {
-              const obj = {
-                version: storage.version || CURRENT_SCHEMA_VERSION,
-                profiles: storage.profiles,
-                lastUpdated: nowISOString(),
-              };
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
-              storage.lastUpdated = obj.lastUpdated;
-            } catch (e) {
-              console.error("写入本地档案失败", e);
-            }
-          }
-          function migrateIfNeeded(data) {
-            if (!data || typeof data !== "object")
-              return {
-                version: CURRENT_SCHEMA_VERSION,
-                profiles: [],
-                lastUpdated: null,
-              };
-            return {
-              version: data.version || 1,
-              profiles: Array.isArray(data.profiles) ? data.profiles : [],
-              lastUpdated: data.lastUpdated || null,
-            };
-          }
-          function dedupeById(arr) {
-            const map = new Map();
-            for (const p of arr) {
-              if (!p.id)
-                p.id =
-                  "p_" + Date.now() + Math.random().toString(36).slice(2, 9);
-              map.set(p.id, p);
-            }
-            return Array.from(map.values());
-          }
-
-          // profile ops
-          function createProfile() {
-            const id = "p_" + Date.now();
-            const name = "新档案 " + new Date().toLocaleString();
-            const p = Object.assign(
-              { id, name },
-              JSON.parse(JSON.stringify(defaultForm()))
-            );
-            storage.profiles.unshift(p);
-            saveToLocal();
-            activeProfileId.value = id;
-            loadProfileToForm(id);
-          }
-          function onProfileSelect() {
-            if (activeProfileId.value) loadProfileToForm(activeProfileId.value);
-          }
-          function loadProfileToForm(id) {
-            const p = storage.profiles.find((x) => x.id === id);
-            if (!p) return;
-            profileNameInput.value = p.name;
-            [
-              "initial",
-              "monthlyTopup",
-              "returnRate",
-              "returnRateUnit",
-              "duration",
-              "durationUnit",
-              "compounding",
-            ].forEach(
-              (k) => (form[k] = p[k] !== undefined ? p[k] : defaultForm()[k])
-            );
-            setTimeout(() => {
-              try {
-                onCalculate();
-              } catch (e) {}
-            }, 50);
-          }
-          function saveProfile() {
-            if (!profileNameInput.value && !activeProfileId.value) {
-              alert("请填写档案名称或先选择档案");
-              return;
-            }
-            if (!activeProfileId.value) {
-              const id = "p_" + Date.now();
-              const name =
-                profileNameInput.value.trim() ||
-                "档案 " + new Date().toLocaleString();
-              const p = { id, name, ...JSON.parse(JSON.stringify(form)) };
-              storage.profiles.unshift(p);
-              activeProfileId.value = id;
-              saveToLocal();
-              alert("已新建并保存");
-              return;
-            }
-            const p = storage.profiles.find(
-              (x) => x.id === activeProfileId.value
-            );
-            if (p) {
-              p.name = profileNameInput.value.trim() || p.name;
-              [
-                "initial",
-                "monthlyTopup",
-                "returnRate",
-                "returnRateUnit",
-                "duration",
-                "durationUnit",
-                "compounding",
-              ].forEach((k) => (p[k] = form[k]));
-              saveToLocal();
-              alert("已更新档案");
-            }
-          }
-          function duplicateProfile() {
-            if (!activeProfileId.value) return;
-            const p = storage.profiles.find(
-              (x) => x.id === activeProfileId.value
-            );
-            if (!p) return;
-            const copy = JSON.parse(JSON.stringify(p));
-            copy.id = "p_" + Date.now();
-            copy.name = p.name + " (复制)";
-            storage.profiles.unshift(copy);
-            saveToLocal();
-          }
-          function renameCurrent() {
-            if (!activeProfileId.value) return;
-            const p = storage.profiles.find(
-              (x) => x.id === activeProfileId.value
-            );
-            if (!p) return;
-            const nv = prompt("输入新名称", p.name);
-            if (nv) {
-              p.name = nv;
-              saveToLocal();
-            }
-          }
-          function deleteCurrent() {
-            if (!activeProfileId.value) return;
-            if (!confirm("确认删除当前档案？")) return;
-            const idx = storage.profiles.findIndex(
-              (x) => x.id === activeProfileId.value
-            );
-            if (idx >= 0) {
-              storage.profiles.splice(idx, 1);
-              saveToLocal();
-              activeProfileId.value = storage.profiles.length
-                ? storage.profiles[0].id
-                : null;
-              if (activeProfileId.value)
-                loadProfileToForm(activeProfileId.value);
-            }
-          }
-          function resetForm() {
-            Object.assign(form, JSON.parse(JSON.stringify(defaultForm())));
-            profileNameInput.value = "";
-          }
-
-          // import/export
-          function exportToFile() {
-            try {
-              const obj = {
-                version: storage.version || CURRENT_SCHEMA_VERSION,
-                profiles: storage.profiles,
-                lastUpdated: nowISOString(),
-              };
-              const ts = new Date();
-              const pad = (n, len = 2) => String(n).padStart(len, "0");
-              const yyyy = ts.getFullYear(),
-                MM = pad(ts.getMonth() + 1),
-                dd = pad(ts.getDate()),
-                hh = pad(ts.getHours()),
-                mm = pad(ts.getMinutes()),
-                ss = pad(ts.getSeconds()),
-                fff = String(ts.getMilliseconds()).padStart(3, "0");
-              const filename = `compound_profiles_${yyyy}${MM}${dd}_${hh}${mm}${ss}${fff}.json`;
-              const blob = new Blob([JSON.stringify(obj, null, 2)], {
-                type: "application/json",
-              });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = filename;
-              a.click();
-              URL.revokeObjectURL(url);
-            } catch (e) {
-              alert("导出失败：" + e.message);
-            }
-          }
-          async function onImportFile(e) {
-            const f = e.target.files && e.target.files[0];
-            if (!f) return;
-            try {
-              const text = await f.text();
-              const parsed = JSON.parse(text);
-              const incoming = Array.isArray(parsed.profiles)
-                ? parsed.profiles
-                : Array.isArray(parsed)
-                ? parsed
-                : [];
-              if (!incoming.length) {
-                alert("导入文件没有档案");
-                return;
-              }
-              const merged = dedupeById(incoming.concat(storage.profiles));
-              storage.profiles.splice(0, storage.profiles.length, ...merged);
-              saveToLocal();
-              alert("导入并合并成功");
-              if (incoming.length > 0) {
-                activeProfileId.value =
-                  incoming[0].id || storage.profiles[0].id;
-                loadProfileToForm(activeProfileId.value);
-              }
-            } catch (err) {
-              alert("导入失败:" + err.message);
-            }
-            e.target.value = "";
-          }
-
-          // calculation: ensure end-of-year becomes next year's startPrincipal
-          function computeAnnualTimeline(cfg) {
-            const years = cfg.durationYears;
-            const rows = [];
-            let startPrincipal = cfg.initial; // year start
-            let cumulativeInterest = 0;
-
-            for (let y = 1; y <= years; y++) {
-              const yearlyAdded = (cfg.monthlyTopup || 0) * 12; // assume monthlyTopup per month
-              let interest = 0;
-
-              if (cfg.compounding === "annually") {
-                // annual compounding: compute interest once on basis
-                if (cfg.interestBasis === "start") {
-                  interest = startPrincipal * cfg.annualRate;
-                } else {
-                  interest = (startPrincipal + yearlyAdded) * cfg.annualRate;
-                }
-              } else {
-                // monthly compounding: iterate 12 months
-                const monthlyRate = Math.pow(1 + cfg.annualRate, 1 / 12) - 1;
-                let balance = startPrincipal;
-                let interestAcc = 0;
-                for (let m = 1; m <= 12; m++) {
-                  const topup = cfg.monthlyTopup || 0;
-                  // assume topup at start of month
-                  if (topup) balance += topup;
-                  if (cfg.interestBasis === "start") {
-                    const monInterest = startPrincipal * monthlyRate;
-                    interestAcc += monInterest;
-                    balance += monInterest;
-                  } else {
-                    const addedSoFar = Math.min(
-                      m * (cfg.monthlyTopup || 0),
-                      yearlyAdded
-                    );
-                    const base = startPrincipal + addedSoFar;
-                    const monInterest = base * monthlyRate;
-                    interestAcc += monInterest;
-                    balance += monInterest;
-                  }
-                }
-                interest = interestAcc;
-              }
-
-              const endBalance = startPrincipal + yearlyAdded + interest;
-              cumulativeInterest += interest;
-
-              rows.push({
-                year: y,
-                startPrincipal: round2(startPrincipal),
-                added: round2(yearlyAdded),
-                interest: round2(interest),
-                endBalance: round2(endBalance),
-                cumulativeInterest: round2(cumulativeInterest),
-              });
-
-              // critical: next year's start = this endBalance
-              startPrincipal = endBalance;
-            }
-
-            const labels = rows.map((r) => r.year + " 年");
-            const principalSeries = rows.map((r) => r.startPrincipal);
-            const interestSeries = rows.map((r) => r.cumulativeInterest);
-            const endSeries = rows.map((r) => r.endBalance);
-            return {
-              rows,
-              labels,
-              principalSeries,
-              interestSeries,
-              endSeries,
-              finalBalance: rows.length ? rows[rows.length - 1].endBalance : 0,
-            };
-          }
-
-          function round2(v) {
-            return Math.round((v + Number.EPSILON) * 100) / 100;
-          }
-
-          function computeTimeline(profile) {
-            const durationYears =
-              profile.durationUnit === "year"
-                ? Math.round(profile.duration)
-                : Math.ceil(profile.duration / 12);
-            const cfg = {
-              initial: Number(profile.initial) || 0,
-              monthlyTopup: Number(profile.monthlyTopup) || 0,
-              annualRate:
-                profile.returnRateUnit === "yearly"
-                  ? (Number(profile.returnRate) || 0) / 100
-                  : Math.pow(1 + (Number(profile.returnRate) || 0) / 100, 12) -
-                    1,
-              durationYears,
-              compounding:
-                profile.compounding === "monthly" ? "monthly" : "annually",
-              interestBasis: interestBasis.value || "startPlusAdded",
-            };
-            return computeAnnualTimeline(cfg);
-          }
-
-          // safeClone
-          function safeClone(obj) {
-            try {
-              return JSON.parse(JSON.stringify(obj));
-            } catch (e) {
-              if (Array.isArray(obj)) return obj.slice();
-              if (obj && typeof obj === "object") return Object.assign({}, obj);
-              return obj;
-            }
-          }
-
-          // chart init/render
-          function initChart() {
-            try {
-              const canvas = document.getElementById("chart");
-              if (!canvas) return;
-              canvas.width = canvas.clientWidth || canvas.width;
-              canvas.height = canvas.clientHeight || canvas.height;
-              if (chartInstance.value) {
-                try {
-                  chartInstance.value.destroy();
-                } catch (e) {}
-                chartInstance.value = null;
-              }
-              const ctx = canvas.getContext("2d");
-              chartInstance.value = new Chart(ctx, {
-                type: "line",
-                data: { labels: [], datasets: [] },
-                options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  interaction: { mode: "index", intersect: false },
-                  plugins: { legend: { position: "top" } },
-                  scales: {
-                    x: { display: true },
-                    y: { display: true, beginAtZero: true },
-                  },
-                },
-              });
-            } catch (e) {
-              console.warn("initChart", e);
-            }
-          }
-
-          function renderChart(datasets, labels) {
-            try {
-              const safeDatasets = safeClone(datasets || []);
-              const safeLabels = safeClone(labels || []);
-              if (!chartInstance.value) initChart();
-              if (!chartInstance.value) {
-                console.error("无法创建 chart 实例");
-                return;
-              }
-              const colorPool = [
-                "rgba(34,197,94,0.95)",
-                "rgba(249,115,22,0.95)",
-                "rgba(59,130,246,0.95)",
-                "rgba(16,185,129,0.9)",
-              ];
-              chartInstance.value.data.labels = Array.isArray(safeLabels)
-                ? safeLabels.slice()
-                : [];
-              chartInstance.value.data.datasets = safeDatasets.map(
-                (ds, idx) => ({
-                  label: String(ds.label || "series" + idx),
-                  data: Array.isArray(ds.data) ? ds.data.slice() : [],
-                  tension: 0.25,
-                  fill: false,
-                  borderWidth: 2,
-                  borderColor: colorPool[idx % colorPool.length],
-                  backgroundColor: colorPool[idx % colorPool.length].replace(
-                    "0.95",
-                    "0.2"
-                  ),
-                })
-              );
-              try {
-                chartInstance.value.update();
-              } catch (e) {
-                console.error("chart update error", e);
-              }
-              lastRender = {
-                mode: "single",
-                datasets: safeClone(safeDatasets),
-                labels: safeClone(safeLabels),
-              };
-            } catch (e) {
-              console.error("renderChart failed", e);
-            }
-          }
-
-          function onCalculate() {
-            if (!activeProfileId.value) {
-              alert("请先选择或新建档案");
-              return;
-            }
-            try {
-              const p = storage.profiles.find(
-                (x) => x.id === activeProfileId.value
-              );
-              const profileForCalc = p ? safeClone(p) : safeClone(form);
-              const res = computeTimeline(profileForCalc);
-              timeline.rows.splice(0, timeline.rows.length, ...res.rows);
-              if (p) {
-                [
-                  "initial",
-                  "monthlyTopup",
-                  "returnRate",
-                  "returnRateUnit",
-                  "duration",
-                  "durationUnit",
-                  "compounding",
-                ].forEach((k) => (p[k] = form[k]));
-              }
-              const datasets = [
-                { label: "年初本金", data: res.principalSeries },
-                { label: "累计利息", data: res.interestSeries },
-                { label: "年末累计总额", data: res.endSeries },
-              ];
-              renderChart(datasets, res.labels);
-              if (collapsed.value) {
-                collapsed.value = false;
-                nextTick(() => {
-                  try {
-                    if (chartInstance.value) {
-                      chartInstance.value.resize();
-                      chartInstance.value.update();
-                    }
-                  } catch (e) {}
-                });
-              }
-            } catch (e) {
-              console.error("calculate error", e);
-              alert("计算失败:" + (e && e.message ? e.message : e));
-            }
-          }
-
-          function toggleStack() {
-            stacked.value = !stacked.value;
-            if (activeProfileId.value) onCalculate();
-          }
-          function downloadPNG() {
-            try {
-              const a = document.createElement("a");
-              a.href = document.getElementById("chart").toDataURL("image/png");
-              a.download = "compound_chart.png";
-              a.click();
-            } catch (e) {
-              alert("下载失败:" + e.message);
-            }
-          }
-
-          function calculateComparison() {
-            if (compareSelection.value.length === 0) {
-              alert("请选择至少一个档案");
-              return;
-            }
-            try {
-              const datasets = [];
-              let labels = null;
-              compareSelection.value.forEach((id) => {
-                const p = storage.profiles.find((x) => x.id === id);
-                if (!p) return;
-                const res = computeTimeline(p);
-                if (!labels || res.labels.length > labels.length)
-                  labels = res.labels;
-                datasets.push({
-                  label: p.name + " - 年初本金",
-                  data: res.principalSeries,
-                });
-                datasets.push({
-                  label: p.name + " - 累计利息",
-                  data: res.interestSeries,
-                });
-                datasets.push({
-                  label: p.name + " - 年末累计",
-                  data: res.endSeries,
-                });
-              });
-              labels = labels || [];
-              const L = labels.length;
-              datasets.forEach((ds) => {
-                if (!Array.isArray(ds.data)) ds.data = [];
-                if (ds.data.length < L) {
-                  const last = ds.data[ds.data.length - 1] || 0;
-                  while (ds.data.length < L) ds.data.push(last);
-                }
-              });
-              renderChart(datasets, labels);
-              lastRender = {
-                mode: "compare",
-                datasets: safeClone(datasets),
-                labels: safeClone(labels),
-              };
-              let summ = "比较摘要:";
-              datasets.forEach((ds) => {
-                const last = ds.data[ds.data.length - 1] || 0;
-                summ += `${ds.label}: ${formatCurrency(last)}`;
-              });
-              comparisonSummary.value = summ;
-              timeline.rows.splice(0, timeline.rows.length);
-            } catch (e) {
-              console.error("calculateComparison", e);
-              alert("比较失败:" + (e && e.message ? e.message : e));
-            }
-          }
-
-          function showComparisonSummary() {
-            if (!comparisonSummary.value) alert("暂无比较摘要");
-            else alert(comparisonSummary.value);
-          }
-
-          function reloadRender() {
-            try {
-              if (chartInstance.value) {
-                try {
-                  chartInstance.value.destroy();
-                } catch (e) {}
-                chartInstance.value = null;
-              }
-              initChart();
-              if (
-                lastRender &&
-                lastRender.datasets &&
-                lastRender.datasets.length
-              ) {
-                renderChart(lastRender.datasets, lastRender.labels);
-              } else if (activeProfileId.value) {
-                onCalculate();
-              } else {
-                console.log("无可渲染数据");
-              }
-            } catch (e) {
-              console.error("reloadRender", e);
-              alert("重新渲染失败");
-            }
-          }
-
-          // Service Worker: only on https or localhost
-          function tryRegisterSW() {
-            try {
-              if ("serviceWorker" in navigator) {
-                const isLocal =
-                  location.protocol === "http:" &&
-                  (location.hostname === "localhost" ||
-                    location.hostname === "127.0.0.1");
-                const isSecure = location.protocol === "https:";
-                if (isSecure || isLocal) {
-                  const swCode = `self.addEventListener('install',e=>{self.skipWaiting();});self.addEventListener('fetch',e=>{});`;
-                  const blob = new Blob([swCode], {
-                    type: "application/javascript",
-                  });
-                  const swUrl = URL.createObjectURL(blob);
-                  navigator.serviceWorker
-                    .register(swUrl)
-                    .then(() => console.log("SW registered"))
-                    .catch((err) => console.warn("SW register failed", err));
-                } else {
-                  console.log("非 https/localhost，跳过 Service Worker");
-                }
-              }
-            } catch (e) {
-              console.warn("sw register err", e);
-            }
-          }
-
-          return {
-            storage,
-            form,
-            profileNameInput,
-            activeProfileId,
-            createProfile,
-            onProfileSelect,
-            saveProfile,
-            duplicateProfile,
-            renameCurrent,
-            deleteCurrent,
-            resetForm,
-            exportToFile,
-            onImportFile,
-            formatCurrency,
-            onCalculate,
-            toggleStack,
-            downloadPNG,
-            compareSelection,
-            calculateComparison,
-            comparisonSummary,
-            showComparisonSummary,
-            reloadRender,
-            timeline,
-            collapsed,
-            interestBasis,
-          };
+    const app = Vue.createApp({
+      data() {
+        return {
+          profiles: [],
+          activeProfileName: "",
+          form: { initial:0, monthlyTopup:0, topupYears:1, duration:1, referenceYear:2025, returnRate:5, returnRateUnit:"yearly", compounding:"yearly", interestBase:"start" },
+          tableData: [], showChart: true, chart:null
+        };
+      },
+      mounted() { this.loadProfiles(); },
+      methods: {
+        syncDuration() { if(this.form.duration===0||this.form.duration===this.form.topupYears-1) this.form.duration=this.form.topupYears; },
+        loadProfiles() {
+          const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"version":1,"profiles":[]}' );
+          this.profiles = data.profiles || [];
+          if (this.profiles.length) { this.activeProfileName = this.profiles[0].name; this.loadProfile(); }
         },
-      }).mount("#app");
-    </script>
-  </body>
+        saveProfiles() { localStorage.setItem(STORAGE_KEY, JSON.stringify({version:1, profiles:this.profiles, lastUpdated:new Date().toISOString()})); },
+        loadProfile() {
+          const p = this.profiles.find(p=>p.name===this.activeProfileName);
+          if (p) Object.assign(this.form, p);
+          this.calculate();
+        },
+        newProfile() {
+          const id="p_"+Date.now(), name="Profile_"+(this.profiles.length+1);
+          this.profiles.push({...this.form,id,name}); this.activeProfileName=name; this.saveProfiles();
+        },
+        duplicateProfile() {
+          const p=this.profiles.find(p=>p.name===this.activeProfileName); if(!p) return;
+          const newName=p.name+"_copy"; this.profiles.push({...p,name:newName,id:"p_"+Date.now()}); this.activeProfileName=newName; this.saveProfiles();
+        },
+        renameProfile() {
+          const newName=prompt("输入新档案名:",this.activeProfileName); if(!newName)return;
+          const p=this.profiles.find(p=>p.name===this.activeProfileName); if(p)p.name=newName; this.activeProfileName=newName; this.saveProfiles();
+        },
+        deleteProfile() {
+          if(!confirm("确定删除当前档案?"))return;
+          this.profiles=this.profiles.filter(p=>p.name!==this.activeProfileName); if(this.profiles.length)this.activeProfileName=this.profiles[0].name; this.saveProfiles();
+        },
+        exportProfiles() {
+          const blob=new Blob([JSON.stringify({version:1,profiles:this.profiles,lastUpdated:new Date().toISOString()},null,2)],{type:"application/json"});
+          const url=URL.createObjectURL(blob); const a=document.createElement("a");
+          a.href=url; a.download="profiles_"+new Date().toISOString().replace(/[:T]/g,"_").slice(0,19)+".json"; a.click(); URL.revokeObjectURL(url);
+        },
+        importProfiles(e) {
+          const file=e.target.files[0]; if(!file)return;
+          const reader=new FileReader(); reader.onload=(evt)=>{
+            try{ const data=JSON.parse(evt.target.result); if(data.profiles)this.profiles=data.profiles; this.saveProfiles(); alert("导入成功"); }
+            catch(err){alert("导入失败:"+err);} };
+          reader.readAsText(file);
+        },
+        computeAnnualTimeline() {
+          const rows=[];
+          let balance=this.form.initial, principalSum=this.form.initial;
+          const rate=this.form.returnRateUnit==="yearly"?this.form.returnRate/100:this.form.returnRate*12/100;
+          for(let i=1;i<=this.form.duration;i++){
+            const added=i<=this.form.topupYears?this.form.monthlyTopup*12:0;
+            const base=this.form.interestBase==="start"?balance:(balance+added);
+            const interest=this.form.compounding==="yearly"?base*rate:(base*((Math.pow(1+rate/12,12))-1));
+            const end=balance+added+interest;
+            principalSum+=added;
+            rows.push({year:this.form.referenceYear+i-1,start:balance,added,interest,end,totalPrincipal:principalSum});
+            balance=end;
+          }
+          return rows;
+        },
+        calculate() {
+          try {
+            this.tableData=this.computeAnnualTimeline();
+            this.$nextTick(()=>this.renderChart());
+          } catch(err){console.error("calculate failed",err);}
+        },
+        renderChart() {
+          try {
+            const ctx=document.getElementById("chart").getContext("2d");
+            if(this.chart){this.chart.destroy();}
+            const labels=this.tableData.map(r=>r.year);
+            const startData=this.tableData.map(r=>r.start);
+            const principalData=this.tableData.map(r=>r.totalPrincipal);
+            const interestData=this.tableData.map(r=>r.interest);
+            const endData=this.tableData.map(r=>r.end);
+            this.chart=new Chart(ctx,{type:"line",data:{labels,
+              datasets:[
+                {label:"年初本金",data:startData,borderColor:"orange",fill:false},
+                {label:"本金累计",data:principalData,borderColor:"brown",fill:false},
+                {label:"利息",data:interestData,borderColor:"green",fill:false},
+                {label:"年末累计总额",data:endData,borderColor:"blue",fill:false}
+              ]},
+              options:{responsive:true,interaction:{mode:"index"}}});
+          } catch(err){console.error("renderChart failed (non-retry):",err);}
+        },
+        resetForm() { Object.assign(this.form,{initial:0,monthlyTopup:0,topupYears:1,duration:1,referenceYear:2025,returnRate:5,returnRateUnit:"yearly",compounding:"yearly",interestBase:"start"}); this.tableData=[]; if(this.chart){this.chart.destroy();} },
+        reloadChart() { this.renderChart(); },
+        toggleChart() { this.showChart=!this.showChart; if(this.showChart) this.$nextTick(()=>this.renderChart()); }
+      }
+    });
+    app.mount("#app");
+  </script>
+</body>
 </html>
