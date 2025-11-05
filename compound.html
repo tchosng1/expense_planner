@@ -3,10 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>复利计算器 (Mobile First, Offline)</title>
+  <title>复利计算器 v6 (Mobile First, Offline-ready)</title>
   <link rel="manifest" href="manifest.json" />
+  <!-- Vue 3 -->
   <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Chart.js (3.x 系列，兼容 chartjs-plugin-zoom v1.x) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+  <!-- Chart.js Zoom & Pan plugin (用于手动缩放/平移) -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js"></script>
+
   <style>
     body { font-family: sans-serif; margin: 10px; background: #f9f9f9; }
     .card { background: white; border-radius: 10px; padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 10px; }
@@ -18,29 +23,41 @@
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { border: 1px solid #ddd; padding: 6px; text-align: right; font-size: 0.9em; }
     th { background: #eee; }
-    .chart-container { position: relative; height: 300px; }
+    .chart-container { position: relative; height: 50vh; min-height: 300px; }
+    .controls-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
+    .small { padding: 4px 8px; font-size: 0.85em; }
+    /* 保持 UI 在窄屏下也友好 */
+    @media (max-width:420px){
+      .controls-row { gap:6px; }
+      button { padding:6px 8px; font-size:0.85em; }
+    }
   </style>
 </head>
 <body>
   <div id="app">
-    <h2>复利计算器 📈</h2>
+    <h2>复利计算器 📈 (v6)</h2>
+
+    <!-- 档案管理卡片（UI 与之前保持一致） -->
     <div class="card">
       <div class="input-row">
         <label>档案管理</label>
         <select v-model="activeProfileName" @change="loadProfile">
           <option v-for="p in profiles" :value="p.name">{{p.name}}</option>
         </select>
-        <div>
-          <button @click="newProfile">新增</button>
-          <button @click="duplicateProfile">复制</button>
-          <button @click="renameProfile">重命名</button>
-          <button @click="deleteProfile">删除</button>
-          <button @click="exportProfiles">导出</button>
+        <div class="controls-row">
+          <button @click="newProfile" class="small">新增</button>
+          <button @click="duplicateProfile" class="small">复制</button>
+          <button @click="renameProfile" class="small">重命名</button>
+          <button @click="deleteProfile" class="small">删除</button>
+          <button @click="exportProfiles" class="small">导出</button>
           <input type="file" @change="importProfiles" />
+          <!-- 新增：手动保存按钮（档案区） -->
+          <button @click="saveProfile" class="small" title="保存当前档案参数">💾 保存</button>
         </div>
       </div>
     </div>
 
+    <!-- 参数输入卡片 -->
     <div class="card">
       <div class="input-row"><label>初始资金</label><input v-model.number="form.initial" type="number"></div>
       <div class="input-row"><label>每月追加</label><input v-model.number="form.monthlyTopup" type="number"></div>
@@ -63,20 +80,28 @@
           <option value="startPlus">按(年初+当年新增)</option>
         </select>
       </div>
-      <div>
+      <div class="controls-row">
         <button @click="calculate">计算</button>
         <button @click="resetForm">重置</button>
         <button @click="reloadChart">🔁 重新渲染</button>
+        <!-- 新增：手动保存按钮（计算区） -->
+        <button @click="saveProfile" class="small" title="保存当前档案参数">💾 保存</button>
       </div>
     </div>
 
+    <!-- 图表卡片：增加缩放控制 -->
     <div class="card">
-      <button @click="toggleChart">{{showChart?'隐藏图表':'显示图表'}}</button>
+      <div class="controls-row">
+        <button @click="toggleChart">{{showChart?'隐藏图表':'显示图表'}}</button>
+        <button @click="resetZoom" class="small">🔍 重置缩放</button>
+        <button @click="toggleZoomMode" class="small">{{ zoomEnabled ? '禁用缩放' : '启用缩放' }}</button>
+      </div>
       <div v-show="showChart" class="chart-container">
         <canvas id="chart"></canvas>
       </div>
     </div>
 
+    <!-- 结果表格 -->
     <div class="card" v-if="tableData.length">
       <table>
         <thead>
@@ -84,7 +109,7 @@
         </thead>
         <tbody>
           <tr v-for="(row,i) in tableData" :key="i">
-            <td>{{i+1}}</td><td>{{row.year}}</td>
+            <td>{{i+1}}</td><td style="text-align:center">{{row.year}}</td>
             <td>{{row.start.toFixed(2)}}</td><td>{{row.added.toFixed(2)}}</td>
             <td>{{row.totalPrincipal.toFixed(2)}}</td>
             <td>{{row.interest.toFixed(2)}}</td><td>{{row.end.toFixed(2)}}</td>
@@ -95,104 +120,450 @@
   </div>
 
   <script>
+    // 本地存储键
     const STORAGE_KEY = "compound_profiles";
+
+    // 注册 zoom 插件（如果可用）
+    if (window.Chart && window.chartjsPluginZoom) {
+      Chart.register(window.chartjsPluginZoom);
+    }
 
     const app = Vue.createApp({
       data() {
         return {
           profiles: [],
           activeProfileName: "",
-          form: { initial:0, monthlyTopup:0, topupYears:1, duration:1, referenceYear:2025, returnRate:5, returnRateUnit:"yearly", compounding:"yearly", interestBase:"start" },
-          tableData: [], showChart: true, chart:null
+          // 确保包含所有字段，以便正确保存/恢复
+          form: {
+            initial:0,
+            monthlyTopup:0,
+            topupYears:1,
+            duration:1,
+            referenceYear:new Date().getFullYear(),
+            returnRate:5,
+            returnRateUnit:"yearly",
+            compounding:"yearly",
+            interestBase:"start"
+          },
+          tableData: [],
+          showChart: true,
+          chart: null,
+          zoomEnabled: true
         };
       },
-      mounted() { this.loadProfiles(); },
+      mounted() {
+        this.loadProfiles();
+      },
       methods: {
-        syncDuration() { if(this.form.duration===0||this.form.duration===this.form.topupYears-1) this.form.duration=this.form.topupYears; },
+        // 当用户改动追加期限时，尝试同步期限（保留原逻辑意图但更稳健）
+        syncDuration() {
+          if (!this.form.duration || this.form.duration < 1) this.form.duration = Math.max(1, this.form.topupYears);
+          // 如果用户把topupYears设置大于duration，我们可以把duration扩展到topupYears以避免丢失追加
+          if (this.form.duration < this.form.topupYears) this.form.duration = this.form.topupYears;
+        },
+
+        // 从 localStorage 读取档案（并默认载入第一个）
         loadProfiles() {
-          const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"version":1,"profiles":[]}' );
-          this.profiles = data.profiles || [];
-          if (this.profiles.length) { this.activeProfileName = this.profiles[0].name; this.loadProfile(); }
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY) || '{"version":1,"profiles":[]}';
+            const data = JSON.parse(raw);
+            this.profiles = Array.isArray(data.profiles) ? data.profiles : [];
+            if (this.profiles.length) {
+              // 如果 activeProfileName 仍为空或找不到对应档案，选择第一个
+              if (!this.activeProfileName || !this.profiles.find(p => p.name === this.activeProfileName)) {
+                this.activeProfileName = this.profiles[0].name;
+              }
+              this.loadProfile();
+            } else {
+              // 没有档案时，初始化一个默认档案（但不强制保存）
+              this.activeProfileName = "";
+            }
+          } catch (err) {
+            console.error("加载档案失败：", err);
+            this.profiles = [];
+            this.activeProfileName = "";
+          }
         },
-        saveProfiles() { localStorage.setItem(STORAGE_KEY, JSON.stringify({version:1, profiles:this.profiles, lastUpdated:new Date().toISOString()})); },
+
+        // 将 profiles 写入 localStorage（统一入口）
+        saveProfiles() {
+          try {
+            const payload = { version:1, profiles:this.profiles, lastUpdated:new Date().toISOString() };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+          } catch (err) {
+            console.error("保存档案失败：", err);
+            alert("保存档案失败，请检查浏览器存储权限。");
+          }
+        },
+
+        // 载入选定档案：确保完整覆盖 form（防止字段缺失）
         loadProfile() {
-          const p = this.profiles.find(p=>p.name===this.activeProfileName);
-          if (p) Object.assign(this.form, p);
-          this.calculate();
+          const p = this.profiles.find(p=>p.name === this.activeProfileName);
+          if (p) {
+            // 复制所有已知字段，防止引用相互影响
+            const copy = {
+              initial: p.initial ?? 0,
+              monthlyTopup: p.monthlyTopup ?? 0,
+              topupYears: p.topupYears ?? 1,
+              duration: p.duration ?? 1,
+              referenceYear: p.referenceYear ?? new Date().getFullYear(),
+              returnRate: p.returnRate ?? 5,
+              returnRateUnit: p.returnRateUnit ?? "yearly",
+              compounding: p.compounding ?? "yearly",
+              interestBase: p.interestBase ?? "start"
+            };
+            Object.assign(this.form, copy);
+            // 载入后立即计算（保留 v5 行为）
+            this.calculate();
+          } else {
+            // 没有找到档案，则保持当前表单不变
+            console.warn("未找到名为", this.activeProfileName, "的档案");
+          }
         },
+
+        // 新增档案（使用当前表单值）
         newProfile() {
-          const id="p_"+Date.now(), name="Profile_"+(this.profiles.length+1);
-          this.profiles.push({...this.form,id,name}); this.activeProfileName=name; this.saveProfiles();
+          const id = "p_" + Date.now();
+          const nameBase = "Profile_" + (this.profiles.length + 1);
+          let name = nameBase;
+          // 确保名字唯一
+          let i = 1;
+          while (this.profiles.find(p => p.name === name)) { name = nameBase + "_" + (++i); }
+          // 确保保存完整字段到档案
+          const p = { id, name, ...this._formSnapshot() };
+          this.profiles.push(p);
+          this.activeProfileName = name;
+          this.saveProfiles();
+          alert("已新增档案：" + name);
         },
+
+        // 复制当前档案
         duplicateProfile() {
-          const p=this.profiles.find(p=>p.name===this.activeProfileName); if(!p) return;
-          const newName=p.name+"_copy"; this.profiles.push({...p,name:newName,id:"p_"+Date.now()}); this.activeProfileName=newName; this.saveProfiles();
+          const p0 = this.profiles.find(p => p.name === this.activeProfileName);
+          if (!p0) { alert("当前没有选中的档案可复制。"); return; }
+          const id = "p_" + Date.now();
+          let newName = p0.name + "_copy";
+          let i = 1;
+          while (this.profiles.find(p => p.name === newName)) { newName = p0.name + "_copy" + (++i); }
+          const copy = { ...p0, id, name: newName };
+          this.profiles.push(copy);
+          this.activeProfileName = newName;
+          this.saveProfiles();
+          alert("已复制档案：" + newName);
         },
+
+        // 重命名档案
         renameProfile() {
-          const newName=prompt("输入新档案名:",this.activeProfileName); if(!newName)return;
-          const p=this.profiles.find(p=>p.name===this.activeProfileName); if(p)p.name=newName; this.activeProfileName=newName; this.saveProfiles();
+          const current = this.activeProfileName;
+          if (!current) return alert("没有选中的档案。");
+          const newName = prompt("输入新档案名:", current);
+          if (!newName) return;
+          // 防止重名
+          if (this.profiles.find(p => p.name === newName && p.name !== current)) {
+            return alert("此名称已存在，请选择其他名称。");
+          }
+          const p = this.profiles.find(p => p.name === current);
+          if (p) p.name = newName;
+          this.activeProfileName = newName;
+          this.saveProfiles();
         },
+
+        // 删除档案
         deleteProfile() {
-          if(!confirm("确定删除当前档案?"))return;
-          this.profiles=this.profiles.filter(p=>p.name!==this.activeProfileName); if(this.profiles.length)this.activeProfileName=this.profiles[0].name; this.saveProfiles();
+          if (!this.activeProfileName) return alert("没有选中的档案。");
+          if (!confirm("确定删除当前档案?")) return;
+          this.profiles = this.profiles.filter(p => p.name !== this.activeProfileName);
+          if (this.profiles.length) {
+            this.activeProfileName = this.profiles[0].name;
+            this.loadProfile();
+          } else {
+            this.activeProfileName = "";
+            // 重置表单但不自动保存
+            this.resetForm();
+          }
+          this.saveProfiles();
         },
+
+        // 导出档案 JSON
         exportProfiles() {
-          const blob=new Blob([JSON.stringify({version:1,profiles:this.profiles,lastUpdated:new Date().toISOString()},null,2)],{type:"application/json"});
-          const url=URL.createObjectURL(blob); const a=document.createElement("a");
-          a.href=url; a.download="profiles_"+new Date().toISOString().replace(/[:T]/g,"_").slice(0,19)+".json"; a.click(); URL.revokeObjectURL(url);
+          const blob = new Blob([JSON.stringify({version:1,profiles:this.profiles,lastUpdated:new Date().toISOString()}, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "profiles_" + new Date().toISOString().replace(/[:T]/g,"_").slice(0,19) + ".json";
+          a.click();
+          URL.revokeObjectURL(url);
         },
+
+        // 导入档案 JSON（覆盖 profiles）
         importProfiles(e) {
-          const file=e.target.files[0]; if(!file)return;
-          const reader=new FileReader(); reader.onload=(evt)=>{
-            try{ const data=JSON.parse(evt.target.result); if(data.profiles)this.profiles=data.profiles; this.saveProfiles(); alert("导入成功"); }
-            catch(err){alert("导入失败:"+err);} };
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            try {
+              const data = JSON.parse(evt.target.result);
+              if (data.profiles && Array.isArray(data.profiles)) {
+                this.profiles = data.profiles.map(p => {
+                  // 确保每个档案都有必需字段（向后兼容）
+                  return {
+                    id: p.id ?? ("p_" + Date.now() + "_" + Math.floor(Math.random()*1000)),
+                    name: p.name ?? ("Profile_imported_" + Math.floor(Math.random()*1000)),
+                    initial: p.initial ?? 0,
+                    monthlyTopup: p.monthlyTopup ?? 0,
+                    topupYears: p.topupYears ?? 1,
+                    duration: p.duration ?? 1,
+                    referenceYear: p.referenceYear ?? new Date().getFullYear(),
+                    returnRate: p.returnRate ?? 5,
+                    returnRateUnit: p.returnRateUnit ?? "yearly",
+                    compounding: p.compounding ?? "yearly",
+                    interestBase: p.interestBase ?? "start"
+                  };
+                });
+                this.saveProfiles();
+                alert("导入成功");
+                // 载入第一个
+                if (this.profiles.length) {
+                  this.activeProfileName = this.profiles[0].name;
+                  this.loadProfile();
+                }
+              } else {
+                throw new Error("JSON 中缺少 profiles 字段。");
+              }
+            } catch (err) {
+              console.error(err);
+              alert("导入失败: " + err.message);
+            }
+          };
           reader.readAsText(file);
+          // 清空 input 以便下次导入同一文件也能触发 change
+          e.target.value = "";
         },
+
+        // 计算年度时间轴（核心计算逻辑）
         computeAnnualTimeline() {
-          const rows=[];
-          let balance=this.form.initial, principalSum=this.form.initial;
-          const rate=this.form.returnRateUnit==="yearly"?this.form.returnRate/100:this.form.returnRate*12/100;
-          for(let i=1;i<=this.form.duration;i++){
-            const added=i<=this.form.topupYears?this.form.monthlyTopup*12:0;
-            const base=this.form.interestBase==="start"?balance:(balance+added);
-            const interest=this.form.compounding==="yearly"?base*rate:(base*((Math.pow(1+rate/12,12))-1));
-            const end=balance+added+interest;
-            principalSum+=added;
-            rows.push({year:this.form.referenceYear+i-1,start:balance,added,interest,end,totalPrincipal:principalSum});
-            balance=end;
+          const rows = [];
+          let balance = Number(this.form.initial) || 0;
+          let principalSum = Number(this.form.initial) || 0;
+          // 年化率转换（如果单位是 monthly，则假设输入为月利率百分比）
+          const rate = (this.form.returnRateUnit === "yearly")
+            ? (Number(this.form.returnRate) || 0) / 100
+            : ( (Number(this.form.returnRate) || 0) * 12 / 100 );
+
+          for (let i = 1; i <= Number(this.form.duration); i++) {
+            const added = i <= Number(this.form.topupYears) ? (Number(this.form.monthlyTopup) || 0) * 12 : 0;
+            const base = (this.form.interestBase === "start") ? balance : (balance + added);
+
+            // 复利计算：按年或按月复利
+            let interest = 0;
+            if (this.form.compounding === "yearly") {
+              interest = base * rate;
+            } else {
+              // 月复利：用年化 rate 进行换算： (1 + rate/12)^12 - 1
+              const monthlyRate = rate / 12;
+              interest = base * (Math.pow(1 + monthlyRate, 12) - 1);
+            }
+
+            const end = balance + added + interest;
+            principalSum += added;
+            rows.push({
+              year: Number(this.form.referenceYear) + i - 1,
+              start: balance,
+              added: added,
+              interest: interest,
+              end: end,
+              totalPrincipal: principalSum
+            });
+            balance = end;
           }
           return rows;
         },
+
+        // 计算并渲染图表
         calculate() {
           try {
-            this.tableData=this.computeAnnualTimeline();
-            this.$nextTick(()=>this.renderChart());
-          } catch(err){console.error("calculate failed",err);}
+            // 先把当前表单写回到内存中的当前档案（但不覆盖档案除非用户手动保存）
+            // —— 保持用户在切换档案前的临时编辑不会被强制写入档案
+            this.tableData = this.computeAnnualTimeline();
+            this.$nextTick(() => this.renderChart());
+          } catch (err) {
+            console.error("calculate failed", err);
+            alert("计算失败，请检查输入项。");
+          }
         },
+
+        // 渲染 Chart.js 图表（包含 auto-scaling 与 zoom 配置）
         renderChart() {
           try {
-            const ctx=document.getElementById("chart").getContext("2d");
-            if(this.chart){this.chart.destroy();}
-            const labels=this.tableData.map(r=>r.year);
-            const startData=this.tableData.map(r=>r.start);
-            const principalData=this.tableData.map(r=>r.totalPrincipal);
-            const interestData=this.tableData.map(r=>r.interest);
-            const endData=this.tableData.map(r=>r.end);
-            this.chart=new Chart(ctx,{type:"line",data:{labels,
-              datasets:[
-                {label:"年初本金",data:startData,borderColor:"orange",fill:false},
-                {label:"本金累计",data:principalData,borderColor:"brown",fill:false},
-                {label:"利息",data:interestData,borderColor:"green",fill:false},
-                {label:"年末累计总额",data:endData,borderColor:"blue",fill:false}
-              ]},
-              options:{responsive:true,interaction:{mode:"index"}}});
-          } catch(err){console.error("renderChart failed (non-retry):",err);}
+            const ctx = document.getElementById("chart").getContext("2d");
+            if (this.chart) { try { this.chart.destroy(); } catch (e) { console.warn(e); } }
+
+            const labels = this.tableData.map(r => String(r.year));
+            const startData = this.tableData.map(r => r.start);
+            const principalData = this.tableData.map(r => r.totalPrincipal);
+            const interestData = this.tableData.map(r => r.interest);
+            const endData = this.tableData.map(r => r.end);
+
+            const pluginZoomAvailable = !!(window.chartjsPluginZoom && Chart && Chart.registry);
+
+            const options = {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: "index", intersect: false },
+              scales: {
+                x: {
+                  ticks: { autoSkip: true, maxTicksLimit: 10 },
+                },
+                y: {
+                  beginAtZero: true,
+                  ticks: {
+                    // 使用本地化格式显示数值
+                    callback: function(value, index, ticks) {
+                      return Number(value).toLocaleString();
+                    }
+                  }
+                }
+              },
+              plugins: {
+                legend: { position: 'top' },
+                tooltip: {
+                  mode: 'index',
+                  callbacks: {
+                    label: function(context) {
+                      const val = context.parsed.y;
+                      return context.dataset.label + ": " + (Number(val).toLocaleString(undefined, {maximumFractionDigits:2}));
+                    }
+                  }
+                },
+                // 如果插件可用，则加入 zoom 配置
+                zoom: (pluginZoomAvailable ? {
+                  zoom: {
+                    wheel: { enabled: this.zoomEnabled },
+                    pinch: { enabled: this.zoomEnabled },
+                    mode: 'xy'
+                  },
+                  pan: {
+                    enabled: this.zoomEnabled,
+                    mode: 'xy'
+                  }
+                } : undefined)
+              }
+            };
+
+            this.chart = new Chart(ctx, {
+              type: "line",
+              data: {
+                labels,
+                datasets: [
+                  { label: "年初本金", data: startData, borderColor: "orange", backgroundColor: "rgba(0,0,0,0)", fill: false, tension:0.1 },
+                  { label: "本金累计", data: principalData, borderColor: "brown", backgroundColor: "rgba(0,0,0,0)", fill: false, tension:0.1 },
+                  { label: "利息", data: interestData, borderColor: "green", backgroundColor: "rgba(0,0,0,0)", fill: false, tension:0.1 },
+                  { label: "年末累计总额", data: endData, borderColor: "blue", backgroundColor: "rgba(0,0,0,0)", fill: false, tension:0.1 }
+                ]
+              },
+              options
+            });
+          } catch (err) {
+            console.error("renderChart failed:", err);
+          }
         },
-        resetForm() { Object.assign(this.form,{initial:0,monthlyTopup:0,topupYears:1,duration:1,referenceYear:2025,returnRate:5,returnRateUnit:"yearly",compounding:"yearly",interestBase:"start"}); this.tableData=[]; if(this.chart){this.chart.destroy();} },
-        reloadChart() { this.renderChart(); },
-        toggleChart() { this.showChart=!this.showChart; if(this.showChart) this.$nextTick(()=>this.renderChart()); }
+
+        // 重新渲染图表（保留数据）
+        reloadChart() {
+          this.renderChart();
+        },
+
+        // 手动保存当前档案（两个保存按钮共用）
+        saveProfile() {
+          // 如果没有活动档案，则提示是否创建新档案并保存
+          if (!this.activeProfileName) {
+            if (!confirm("当前没有选中的档案，要以当前参数创建新档案并保存吗？")) return;
+            // 创建新档案
+            const id = "p_" + Date.now();
+            const nameBase = "Profile_" + (this.profiles.length + 1);
+            let name = nameBase;
+            let i = 1;
+            while (this.profiles.find(p => p.name === name)) { name = nameBase + "_" + (++i); }
+            const p = { id, name, ...this._formSnapshot() };
+            this.profiles.push(p);
+            this.activeProfileName = name;
+            this.saveProfiles();
+            alert("已创建并保存档案：" + name);
+            return;
+          }
+          // 找到档案并更新全部字段
+          const p = this.profiles.find(p => p.name === this.activeProfileName);
+          if (!p) {
+            // 若找不到（理论上不应发生），则新建
+            const id = "p_" + Date.now();
+            const newP = { id, name: this.activeProfileName, ...this._formSnapshot() };
+            this.profiles.push(newP);
+            this.saveProfiles();
+            alert("已保存档案：" + this.activeProfileName);
+            return;
+          }
+          // 确保把表单所有字段写回档案（修复 topupYears/referenceYear 未保存的问题）
+          Object.assign(p, this._formSnapshot());
+          this.saveProfiles();
+          alert("当前档案已保存 ✅");
+        },
+
+        // 生成当前表单的快照对象（用于保存/复制/导出）
+        _formSnapshot() {
+          return {
+            initial: Number(this.form.initial) || 0,
+            monthlyTopup: Number(this.form.monthlyTopup) || 0,
+            topupYears: Number(this.form.topupYears) || 1,
+            duration: Number(this.form.duration) || 1,
+            referenceYear: Number(this.form.referenceYear) || new Date().getFullYear(),
+            returnRate: Number(this.form.returnRate) || 0,
+            returnRateUnit: this.form.returnRateUnit || "yearly",
+            compounding: this.form.compounding || "yearly",
+            interestBase: this.form.interestBase || "start"
+          };
+        },
+
+        // 重置表单（不影响已保存档案）
+        resetForm() {
+          Object.assign(this.form, {
+            initial:0, monthlyTopup:0, topupYears:1, duration:1,
+            referenceYear: new Date().getFullYear(), returnRate:5, returnRateUnit:"yearly",
+            compounding:"yearly", interestBase:"start"
+          });
+          this.tableData = [];
+          if (this.chart) {
+            try { this.chart.destroy(); } catch(e) { console.warn(e); }
+            this.chart = null;
+          }
+        },
+
+        // 图表缩放控制：重置缩放
+        resetZoom() {
+          if (this.chart && this.chart.resetZoom) {
+            try { this.chart.resetZoom(); }
+            catch (e) { console.warn("resetZoom fail:", e); }
+          } else {
+            // 如果插件不可用，则重新渲染图表作为退路
+            this.renderChart();
+          }
+        },
+
+        // 启用/禁用缩放和平移
+        toggleZoomMode() {
+          this.zoomEnabled = !this.zoomEnabled;
+          if (this.chart && this.chart.options && this.chart.options.plugins && this.chart.options.plugins.zoom) {
+            this.chart.options.plugins.zoom.zoom.wheel.enabled = this.zoomEnabled;
+            this.chart.options.plugins.zoom.zoom.pinch.enabled = this.zoomEnabled;
+            this.chart.options.plugins.zoom.pan.enabled = this.zoomEnabled;
+            this.chart.update();
+          } else {
+            // 如果尚未渲染或 plugin 不存在，重新渲染一次以确保配置生效
+            this.renderChart();
+          }
+        }
       }
     });
+
     app.mount("#app");
   </script>
 </body>
